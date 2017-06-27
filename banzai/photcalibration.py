@@ -76,7 +76,6 @@ class PS1Catalog:
         calibration, it is desirable to select point sources onyl from the input catalog.
         """
 
-        print ("converting PS1 to sdss system via finkbeiner")
 
 
         pscolor = table['gMeanPSFMag'] - table['iMeanPSFMag']
@@ -99,32 +98,37 @@ class PS1Catalog:
         returns: astropy.table object
 
         copied from https://michaelmommert.wordpress.com/2017/02/13/accessing-the-gaia-and-pan-starrs-catalogs-using-python/
-        """
-        # r = requests.get(server,
-        # params= {'CAT':"PS1V3OBJECTS", 'RA': ra_deg, 'DEC': dec_deg,
-        #      'SR': rad_deg, 'MAXOBJ': maxsources,
-        #      'FORMAT': 'CSV',
-        #      'ndetections': ('>%d' % mindet)})
-        #
-        # input = StringIO.StringIO(r.text)
-        # write query data into local file
+        # """
+        r = requests.get(server,
+        params= {'CAT':"PS1V3OBJECTS", 'RA': ra_deg, 'DEC': dec_deg,
+             'SR': rad_deg, 'MAXOBJ': maxsources,
+              'FORMAT': 'CSV',
+              'ndetections': ('>%d' % mindet)})
+
+
+        #write query data into local file
         #outf = open('panstarrs.dat', 'w')
         #outf.write(r.text)
         #outf.close()
 
-        input =  'panstarrs.dat'
-        table = np.genfromtxt (input,  names=True, skip_header=1, delimiter=',', )
+        #input =  'panstarrs.dat'
+
+        # need at least a few lines of input to reasoanably proceed.
+        if (r.text.count('\n') > 10):
+            input = StringIO.StringIO(r.text)
+            table = np.genfromtxt (input,  names=True, skip_header=1, delimiter=',', )
 
 
-        self.PS1toSDSS(table)
+            self.PS1toSDSS(table)
 
-        return table
+            return table
+        return None
 
 
 
     def loadFitsCatalog (self, image):
 
-        testimage = fits.open ('../testing/coj1m011-fl12-20170613-0073-e11.fits.fz')
+        testimage = fits.open (image)
 
         ra  = testimage['SCI'].header['CRVAL1']
         dec = testimage['SCI'].header['CRVAL2']
@@ -139,14 +143,14 @@ class PS1Catalog:
         referenceFilterName = referenceInformation['refMag']
 
 
-
-        print (referenceInformation)
-
         instCatalog = testimage['CAT'].data
         image_wcs = WCS(testimage['SCI'].header)
         ras, decs = image_wcs.all_pix2world(instCatalog['x'], instCatalog['y'], 1)
 
         reftable = self.panstarrs_query(ra,dec,0.3)
+        if reftable is None:
+            print ("Failure on image %s, no reference table received." % (image))
+            return
         # TODO: Check if catalog query was successful.
 
         cInstrument = SkyCoord(ra=ras*u.degree, dec=decs*u.degree)
@@ -189,44 +193,65 @@ class PS1Catalog:
 
 from astropy import units as u
 
-
-
-
-
-ps1 = PS1Catalog ()
-
-ra, dec, instmag, refmag, refcol, matchDist = ps1.loadFitsCatalog(None)
-
 matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
+import re
+
+def analyzeImage (imageName):
 
 
-magZP = refmag - instmag
+    outbasename = re.sub ('.fits.fz','', imageName)
 
-plt.figure()
-plt.plot (refmag, magZP, '.')
-plt.xlim([10,22])
-plt.ylim ([20,26])
 
-photzp = np.median (magZP)
-print ("Photometric zeropoint: %5.2f" % (photzp))
+    ps1 = PS1Catalog ()
+    ra, dec, instmag, refmag, refcol, matchDist = ps1.loadFitsCatalog(imageName)
 
-plt.axhline(y=photzp, color='r', linestyle='-')
 
-plt.xlabel ("Reference catalog mag")
-plt.ylabel ("Reference Mag - Instrumnetal Mag")
-plt.title ("Photometric zeropoint %5.2f" % (photzp))
-plt.savefig ("photoplot_zp.png")
 
-plt.figure()
-plt.plot (refcol , magZP - photzp, '.')
-plt.xlim([-0.5,3])
-plt.ylim ([-1,1])
-plt.savefig ("photoplot_color.png")
+    magZP = refmag - instmag
 
-plt.figure()
-plt.scatter (ra,dec, c= magZP - photzp, vmin=-0.2, vmax=0.2, edgecolor='none',
+    f=plt.figure()
+    plt.plot (refmag, magZP, '.')
+    plt.xlim([10,22])
+    plt.ylim ([20,26])
+
+    photzp = np.median (magZP)
+    print ("Photometric zeropoint: %s  %5.2f" % (outbasename, photzp))
+
+    plt.axhline(y=photzp, color='r', linestyle='-')
+
+    plt.xlabel ("Reference catalog mag")
+    plt.ylabel ("Reference Mag - Instrumnetal Mag")
+    plt.title ("Photometric zeropoint %s %5.2f" % (outbasename, photzp))
+    plt.savefig ("%s_zp.png" % (outbasename))
+    plt.close()
+
+    f=plt.figure()
+    plt.plot (refcol , magZP - photzp, '.')
+    plt.xlim([-0.5,3])
+    plt.ylim ([-1,1])
+    plt.xlabel ("(g-r)_{SDSS} Reference")
+    plt.ylabel ("Reference Mag - Instrumnetal Mag - ZP (%5.2f)" %( photzp))
+    plt.title ("Color correction %s " % (outbasename))
+    plt.savefig ("%s_color.png" % (outbasename))
+    plt.close()
+
+    f=plt.figure()
+    plt.scatter (ra,dec, c= magZP - photzp, vmin=-0.2, vmax=0.2, edgecolor='none',
                                    s=9, cmap=matplotlib.pyplot.cm.get_cmap( 'nipy_spectral') )
-plt.colorbar()
-plt.savefig ('photplot_zpmap.png')
+    plt.colorbar()
+    plt.title ("Spacial variation of phot. Zeropoint %s" % (outbasename))
+    plt.xlabel ("RA")
+    plt.ylabel ("Dec")
+    plt.savefig ("%s_zpmap.png" % (outbasename))
+    plt.close()
+
+import glob
+
+inputlist = glob.glob("../testing/lcogtdata-20170627-28/*.fits.fz")
+
+for image in inputlist:
+
+
+    analyzeImage(image)
