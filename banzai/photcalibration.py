@@ -24,6 +24,11 @@ class PhotCalib(Stage):
     # These filters can be readilly transformed to the SDSS griz system with PS as a reference base.
     VALID_FILTERS = ('gp', 'rp', 'ip', 'zp')
 
+    # To be replaced with map:
+    # LCO filter -> sdss filter name, sdsss g-i color term, airmass term, default zero point.
+    # possibly need this for all site:telescope:camera:filter settings. Maybe start with one
+    # default and see where it goes.
+
 
 
     def __init__(self, pipeline_context):
@@ -42,6 +47,21 @@ class PhotCalib(Stage):
 class PS1Catalog:
 
     localChacheDir = None
+
+
+    FILTERMAPPING = {}
+    FILTERMAPPING['gp'] = {'refMag': 'gMeanPSFMag', 'colorTerm': 0.0, 'airmassTerm': 0.0, 'defaultZP': 0.0}
+    FILTERMAPPING['rp'] = {'refMag': 'rMeanPSFMag', 'colorTerm': 0.0, 'airmassTerm': 0.0, 'defaultZP': 0.0}
+    FILTERMAPPING['ip'] = {'refMag': 'iMeanPSFMag', 'colorTerm': 0.0, 'airmassTerm': 0.0, 'defaultZP': 0.0}
+    FILTERMAPPING['zp'] = {'refMag': 'zMeanPSFMag', 'colorTerm': 0.0, 'airmassTerm': 0.0, 'defaultZP': 0.0}
+
+    ps1colorterms = {}
+    ps1colorterms['gMeanPSFMag'] = [-0.01808,-0.13595, 0.01941,-0.00183][::-1]
+    ps1colorterms['rMeanPSFMag'] = [-0.01836,-0.03577, 0.02612,-0.00558][::-1]
+    ps1colorterms['iMeanPSFMag'] = [ 0.01170,-0.00400, 0.00066,-0.00058][::-1]
+    ps1colorterms['zMeanPSFMag'] = [-0.01062, 0.07529,-0.03592, 0.00890][::-1]
+
+
     def __init__ (self):
         pass
 
@@ -58,15 +78,11 @@ class PS1Catalog:
 
         print ("converting PS1 to sdss system via finkbeiner")
 
-        ps1colorterms = {}
-        ps1colorterms['gMeanPSFMag'] = [-0.01808,-0.13595, 0.01941,-0.00183][::-1]
-        ps1colorterms['rMeanPSFMag'] = [-0.01836,-0.03577, 0.02612,-0.00558][::-1]
-        ps1colorterms['iMeanPSFMag'] = [ 0.01170,-0.00400, 0.00066,-0.00058][::-1]
-        ps1colorterms['zMeanPSFMag'] = [-0.01062, 0.07529,-0.03592, 0.00890][::-1]
+
         pscolor = table['gMeanPSFMag'] - table['iMeanPSFMag']
 
-        for filter in ps1colorterms:
-            colorcorrection = np.polyval (ps1colorterms[filter], pscolor)
+        for filter in self.ps1colorterms:
+            colorcorrection = np.polyval (self.ps1colorterms[filter], pscolor)
             table[filter] -= colorcorrection
         return table
 
@@ -104,61 +120,96 @@ class PS1Catalog:
 
         return table
 
+
+
+    def loadFitsCatalog (self, image):
+
+        testimage = fits.open ('../testing/coj1m011-fl12-20170613-0073-e11.fits.fz')
+
+        ra  = testimage['SCI'].header['CRVAL1']
+        dec = testimage['SCI'].header['CRVAL2']
+        exptime = testimage['SCI'].header['EXPTIME']
+        filterName = testimage['SCI'].header['FILTER']
+
+        referenceInformation = self.FILTERMAPPING[filterName]
+
+        if (referenceInformation is None):
+            referenceInformation = self.FILTERMAPPING['rp']
+
+        referenceFilterName = referenceInformation['refMag']
+
+
+
+        print (referenceInformation)
+
+        instCatalog = testimage['CAT'].data
+        image_wcs = WCS(testimage['SCI'].header)
+        ras, decs = image_wcs.all_pix2world(instCatalog['x'], instCatalog['y'], 1)
+
+        reftable = self.panstarrs_query(ra,dec,0.3)
+        # TODO: Check if catalog query was successful.
+
+        cInstrument = SkyCoord(ra=ras*u.degree, dec=decs*u.degree)
+        cReference  = SkyCoord(ra=reftable['raMean']*u.degree, dec=reftable['decMean']*u.degree)
+        idx, d2d,d3d = cReference.match_to_catalog_sky(cInstrument)
+
+        # reshuffle the source catalog to index-match the reference catalog.
+        #  There is probably as smarter way of doing this!
+        instCatalogT = np.transpose(instCatalog)[idx]
+        instCatalog  = np.transpose (instCatalogT)
+
+        # Measure the distance between matched pairs. Important to down-select viable pairs.
+        distance = cReference.separation (cInstrument[idx]).arcsecond
+
+
+        # Define a reasonable condition on what is a good match on good photometry
+        condition = (distance < 5) & (instCatalog['FLUX'] > 0) & (reftable[referenceFilterName] > 0)& (reftable[referenceFilterName] < 26)
+        if (exptime <=0):
+           extime =1
+        # Calculate instrumental magnitude from PSF instrument photometry
+        instmag =  -2.5 * np.log10(instCatalog['FLUX'][condition] / exptime)
+
+        # Calculate the magnitude difference between reference and inst catalog
+        instrumentalMag =  instmag
+        referenceColor  = (reftable['gMeanPSFMag']- reftable['iMeanPSFMag'])[condition]
+
+        referenceMag = reftable[referenceFilterName][condition]
+        referenceRA  = reftable['raMean'][condition]
+        referenceDEC = reftable['decMean'][condition]
+        matchDistance = distance[condition]
+
+
+
+        return referenceRA, referenceDEC, instrumentalMag, referenceMag, referenceColor, matchDistance
+
+
+
+
 # Example query
 
 from astropy import units as u
 
-def loadFitsCatalog (image):
-
-    testimage = fits.open ('../testing/coj1m011-fl12-20170613-0073-e11.fits.fz')
-
-    ra  = testimage['SCI'].header['CRVAL1']
-    dec = testimage['SCI'].header['CRVAL2']
-    exptime = testimage['SCI'].header['EXPTIME']
-    phot = testimage['CAT'].data
-    image_wcs = WCS(testimage['SCI'].header)
-    ras, decs = image_wcs.all_pix2world(phot['x'], phot['y'], 1)
-
-
-    return ra,dec,phot, ras, decs, exptime
 
 
 
-ra,dec,phot,ras,decs, exptime = loadFitsCatalog   (None)
+
 ps1 = PS1Catalog ()
-reftable = ps1.panstarrs_query(ra,dec,0.3)
 
-
-
-cphot = SkyCoord(ra=ras*u.degree, dec=decs*u.degree)
-cref  = SkyCoord(ra=reftable['raMean']*u.degree, dec=reftable['decMean']*u.degree)
-idx, d2d,d3d = cref.match_to_catalog_sky(cphot)
-print (phot)
-phott = np.transpose(phot)[idx]
-phot  = np.transpose (phott)
-
-
-
-distance = cref.separation (cphot[idx]).arcsecond
-
-condition = (distance < 5) & (phot['FLUX'] > 0) & (reftable['rMeanPSFMag'] > 0)& (reftable['rMeanPSFMag'] < 26)
-
-print ( distance )
-instmag =  -2.5 * np.log10(phot['FLUX'] / exptime)
-
-
-delta_r = ( reftable['rMeanPSFMag']  - instmag )[condition]
-catalog_gi = (reftable['gMeanPSFMag']- reftable['iMeanPSFMag'])[condition]
-catalog_r = reftable['rMeanPSFMag'][condition]
+ra, dec, instmag, refmag, refcol, matchDist = ps1.loadFitsCatalog(None)
 
 matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
-plt.plot (catalog_r, delta_r, '.')
+
+
+magZP = refmag - instmag
+
+plt.figure()
+plt.plot (refmag, magZP, '.')
 plt.xlim([10,22])
 plt.ylim ([20,26])
 
-photzp = np.median (delta_r)
+photzp = np.median (magZP)
 print ("Photometric zeropoint: %5.2f" % (photzp))
 
 plt.axhline(y=photzp, color='r', linestyle='-')
@@ -168,10 +219,14 @@ plt.ylabel ("Reference Mag - Instrumnetal Mag")
 plt.title ("Photometric zeropoint %5.2f" % (photzp))
 plt.savefig ("photoplot_zp.png")
 
-
-plt.plot (catalog_gi, delta_r, '.')
+plt.figure()
+plt.plot (refcol , magZP - photzp, '.')
 plt.xlim([-0.5,3])
-plt.ylim ([20,30])
+plt.ylim ([-1,1])
 plt.savefig ("photoplot_color.png")
 
-
+plt.figure()
+plt.scatter (ra,dec, c= magZP - photzp, vmin=-0.2, vmax=0.2, edgecolor='none',
+                                   s=9, cmap=matplotlib.pyplot.cm.get_cmap( 'nipy_spectral') )
+plt.colorbar()
+plt.savefig ('photplot_zpmap.png')
