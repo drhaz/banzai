@@ -15,6 +15,7 @@ from astropy import units
 import numpy as np
 import requests
 import StringIO
+from numpy import rec
 from astropy.io.votable import parse_single_table
 
 
@@ -175,9 +176,13 @@ class PhotCalib():
         plt.close()
 
 
+import os
+
 class PS1Catalog:
 
-    localCacheDir = None
+    localCacheIndexBaseDir = "/home/dharbeck/Catalogs/PS1"
+    indexTable = None
+    gridsize=0.5
 
     FILTERMAPPING = {}
     FILTERMAPPING['gp'] = {'refMag': 'gMeanPSFMag', 'colorTerm': 0.0, 'airmassTerm': 0.0, 'defaultZP': 0.0}
@@ -192,8 +197,159 @@ class PS1Catalog:
     ps1colorterms['zMeanPSFMag'] = [-0.01062, 0.07529,-0.03592, 0.00890][::-1]
 
 
-    def __init__ (self):
-        pass
+    def __init__ (self, cacheIndex = None):
+
+        if cacheIndex is not None:
+            self.localCacheIndexBaseDir = cacheIndex
+            print ("PS1 cache detected: %s" % self.localCacheIndexBaseDir)
+
+            data = []
+
+            for dec in np.arange (-30,+90,self.gridsize):
+                idx = 0
+                for ra in np.arange (0,360,self.gridsize):
+                    name = "%04d/%05d-%010d.txt" % (dec %10, dec*100, idx)
+                    idx = idx + 1
+                    data.append ( (ra, ra+self.gridsize, dec, dec+self.gridsize, str(name)))
+
+            dtype = np.dtype({'names':['R_MIN','R_MAX','D_MIN','D_MAX','NAME'], 'formats':[float,float,float,float,'S25']})
+
+            self.indexTable = np.array(data,  dtype=dtype )
+
+            pass
+
+    def panstarrs_query (self, ra_deg, dec_deg, ra_max_deg,dec_max_deg, mindet=5, maxsources=50000):
+
+        returnTable = None
+        input = None
+
+
+        if self.indexTable is not None:
+            # Fan out the search into segments as defined in indexTable
+
+
+            needed_catalogs =  (self.indexTable['R_MIN'] <= ra_max_deg)\
+                              & (self.indexTable['R_MAX'] > ra_deg)\
+                              & (self.indexTable['D_MIN'] <= dec_max_deg)\
+                              & (self.indexTable['D_MAX'] > dec_deg)
+
+            #print (needed_catalogs)
+
+            first = True
+            f= open ("tmp.cat", "w+")
+            for needed in self.indexTable[needed_catalogs]:
+                #print (needed)
+                cachename = os.path.join(self.localCacheIndexBaseDir, needed['NAME'])
+                print ("Reqeusted area falls into segment: %s" % cachename)
+
+
+                iteminput = self.do_panstarrs_query(needed['R_MIN'], \
+                                                    needed['D_MIN'], \
+                                                    needed['R_MAX'], \
+                                                    needed['D_MAX'], \
+                                                    mindet=mindet, maxsources=50000, cacheFile = cachename)
+
+                if not first:
+                    iteminput.readline()
+                    iteminput.readline()
+
+
+                f.write(iteminput.read(None))
+                iteminput.close()
+                first = False
+            f.close()
+            input = "tmp.cat"
+        else:
+            # no Index defined, go ahead and do a streight query to PS.
+            # TODO: check for 360 degree roll-over in RA
+            input = self.do_panstarrs_query(ra_deg, dec_deg, ra_max_deg,dec_max_deg, mindet=mindet,
+                    maxsources=maxsources)
+
+        if input is not None:
+
+
+
+            returnTable = np.genfromtxt (input, names=True, skip_header=1, comments='#', delimiter=',', invalid_raise=False)
+
+            print ("Got  lines from query: " , returnTable.shape)
+            self.PS1toSDSS(returnTable)
+
+        return returnTable
+
+
+    def do_panstarrs_query(self, ra_deg, dec_deg, ra_max_deg,dec_max_deg, mindet=5,
+                    maxsources=50000,
+                    server=('http://gsss.stsci.edu/webservices/vo/CatalogSearch.aspx'),
+                    cacheFile = None):
+
+        """ Online query to PS1 from MAST with check if data cache exists at given location
+
+            Returns an object taht is radable by np.genfromtxt
+        """
+
+        #print ((cacheFile is not None) , (os.path.isfile(cacheFile)))
+
+        if (cacheFile is not None) and (os.path.isfile(cacheFile)):
+            # if lcoal cache exists, use it.
+            # Sounds trivial, but: a chacehFile should contain the ascii text and will be readilyl readable
+            # numpy. Nothing to do here.
+            print ("Detected existing valid cache file. Using it")
+            with open (cacheFile, 'r') as f:
+                ret= StringIO.StringIO(f.read())
+                f.close()
+                return ret
+            return StringIO.StringIO()
+        else:
+            # No cache provided, need to retrieve fresh data. Upon retrieval, data to be stored in cache
+            area = ("%6f,%6f,%6f,%6f" % (ra_deg,dec_deg,ra_max_deg,dec_max_deg))
+            print (area)
+            print ("Start retrieve catalog data at ra % 8.4f dec % 8.4f % 8.4f %8.4f" % (ra_deg,dec_deg, ra_max_deg, dec_max_deg))
+            r = requests.get(server,
+                params= {'CAT':"PS1V3OBJECTS", 'BBOX':area , 'MAXOBJ': maxsources,
+                'FORMAT': 'CSV',
+                'ndetections': ('>%d' % mindet)})
+
+
+            # need at least a few lines of input to reasonably proceed.
+
+            nlines = r.text.count('\n')
+            if (nlines > 10):
+                # Let's write the local output into a cache file.
+
+                if (cacheFile != None):
+
+                    if not os.path.isfile(cacheFile):
+                        try:
+                            # create parent directory if needed.
+                            if not os.path.exists(os.path.dirname(cacheFile)):
+                                os.makedirs(os.path.dirname(cacheFile))
+
+                            # write out file.
+                            with open(cacheFile, "w") as f:
+                                print ("Writing local PS1 cache file: %s" % (cacheFile))
+                                f.write(r.text)
+                                f.close()
+
+                        except Exception as error: # Guard against race condition
+                            print ("Failure while creating cache file directory: " + error.message)
+
+
+                    else:
+                        print ("Cached file already exists, not writing again")
+
+
+
+
+                input = StringIO.StringIO(r.text)
+                return input
+            else:
+                print ("Did not retireve enough lines from query!\n %s \n\n%s" % (r.url,r.text))
+
+
+        print ("\t failed retrieve table)")
+        return None
+
+
 
     def PS1toSDSS (self, table):
         """ PS1 catalog is calibrated to PS12 photometric system, which is different from SDSS
@@ -211,39 +367,6 @@ class PS1Catalog:
             colorcorrection = np.polyval (self.ps1colorterms[filter], pscolor)
             table[filter] -= colorcorrection
         return table
-
-
-    def panstarrs_query(self, ra_deg, dec_deg, rad_deg, mindet=5,
-                    maxsources=5000,
-                    server=('http://gsss.stsci.edu/webservices/vo/CatalogSearch.aspx')):
-
-        """ Online query to PS1 from MAST
-
-            Returns a table as it is retrieved from MAST, loaded into numpy.genfromtxt().
-            The PS photometry values xMeanSPFMag are converted into the SDSSS photometric system.
-
-        """
-        print ("Start retrieve catalog data at ra % 8.4f dec % 8.4f" % (ra_deg,dec_deg))
-        r = requests.get(server,
-        params= {'CAT':"PS1V3OBJECTS", 'RA': ra_deg, 'DEC': dec_deg,
-             'SR': rad_deg, 'MAXOBJ': maxsources,
-              'FORMAT': 'CSV',
-              'ndetections': ('>%d' % mindet)})
-
-        # need at least a few lines of input to reasonably proceed.
-
-        nlines = r.text.count('\n')
-        if (nlines > 10):
-            input = StringIO.StringIO(r.text)
-            table = np.genfromtxt (input,  names=True, skip_header=1, delimiter=',', )
-
-            self.PS1toSDSS(table)
-
-            print ("\tDone retrieve table, %d lines" % nlines)
-            return table
-        print ("\t failed retrieve table)")
-        return None
-
 
 # Example query
 
@@ -263,8 +386,9 @@ inputlist = glob.glob("../testing/lcogtdata-20170627-28/*.fits.fz")
 
 photzpStage = PhotCalib()
 
+ps1 = PS1Catalog("/home/dharbeck/Catalogs/PS1")
+#ps1 = PS1Catalog(None)
 
-for image in inputlist:
-
-
-    photzpStage.analyzeImage(image)
+ps1.panstarrs_query(1,1.2,2,2.1)
+#for image in inputlist:
+#    photzpStage.analyzeImage(image)
