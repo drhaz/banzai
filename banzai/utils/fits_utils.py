@@ -6,6 +6,7 @@ import numpy as np
 import os
 import tempfile
 from banzai.utils import date_utils
+from banzai.utils import file_utils
 from banzai import logs
 
 logger = logs.get_logger(__name__)
