@@ -18,7 +18,7 @@ import StringIO
 from numpy import rec
 from astropy.io.votable import parse_single_table
 
-
+import logging
 import pickle
 
 __author__ = 'dharbeck'
@@ -32,11 +32,12 @@ class PhotCalib():
     # LCO filter -> sdss filter name, sdsss g-i color term, airmass term, default zero point.
     # possibly need this for all site:telescope:camera:filter settings. Maybe start with one
     # default and see where it goes.
+    ps1 = None
 
 
-
-  #  def __init__(self, pipeline_context):
+    def __init__(self):
         #super(PhotCalib, self).__init__(pipeline_context)
+        self.ps1 = PS1Catalog("/home/dharbeck/Catalogs/PS1")
 
     def inInCatalog (dec):
         return dec >= -30.0
@@ -66,15 +67,16 @@ class PhotCalib():
         exptime = testimage['SCI'].header['EXPTIME']
         filterName = testimage['SCI'].header['FILTER']
         airmass = testimage['SCI'].header['AIRMASS']
+        dateobs = testimage['SCI'].header['DATE-OBS']
 
-        if filterName not in PS1Catalog.FILTERMAPPING:
+        if filterName not in self.ps1.FILTERMAPPING:
             print ("Filter not viable for photometrric calibration. Sorry")
             return
 
-        referenceInformation = PS1Catalog.FILTERMAPPING[filterName]
+        referenceInformation = self.ps1.FILTERMAPPING[filterName]
 
         if (referenceInformation is None):
-            referenceInformation = PS1Catalog.FILTERMAPPING['rp']
+            referenceInformation = self.ps1.FILTERMAPPING['rp']
 
         referenceFilterName = referenceInformation['refMag']
 
@@ -85,8 +87,8 @@ class PhotCalib():
         ras, decs = image_wcs.all_pix2world(instCatalog['x'], instCatalog['y'], 1)
 
         # Query reference catalog
-        pscatalog = PS1Catalog()
-        reftable = pscatalog.panstarrs_query(ra,dec,0.3)
+
+        reftable = self.ps1.panstarrs_query(ra-0.2,dec-0.2,ra+0.2,dec+0.2)
 
         if reftable is None:
             print ("Failure on image %s, no reference table received." % (image))
@@ -123,7 +125,7 @@ class PhotCalib():
         matchDistance = distance[condition]
 
 
-        return referenceRA, referenceDEC, instrumentalMag, referenceMag, referenceColor, matchDistance, referenceFilterName, filterName, airmass
+        return referenceRA, referenceDEC, instrumentalMag, referenceMag, referenceColor, matchDistance, referenceFilterName, filterName, airmass, dateobs
 
 
     def analyzeImage (self, imageName, pickle="photzp.db"):
@@ -133,7 +135,7 @@ class PhotCalib():
 
 
 
-        ra, dec, instmag, refmag, refcol, matchDist, refFilter, instFilter, airmass = self.loadFitsCatalog(imageName)
+        ra, dec, instmag, refmag, refcol, matchDist, refFilter, instFilter, airmass, dateobs = self.loadFitsCatalog(imageName)
 
         magZP = refmag - instmag
 
@@ -143,7 +145,7 @@ class PhotCalib():
         plt.ylim ([20,26])
 
         photzp = np.median (magZP)
-        print ("Photometric zeropoint: %s %s %5.2f %5.2f" % (outbasename, instFilter, airmass, photzp))
+
 
 
 
@@ -175,8 +177,226 @@ class PhotCalib():
         plt.savefig ("%s_zpmap.png" % (outbasename))
         plt.close()
 
+        with open(pickle,'a') as f:
+            output = "%s %s %s %s % 6.3f \n" % (imageName, dateobs, airmass, instFilter, photzp)
+            print (output)
+            f.write(output)
+            f.close()
+        return photzp
 
 import os
+
+import math
+class PS1IPP:
+
+    def get_reference_catalog(self, ra, dec, radius, basedir, overwrite_select=False ):
+
+        logger = logging.getLogger("ReadCatalog")
+        catalog_filenames = None
+
+        # print "In get_ref_catalog, cattype=%s, dir=%s" % (cattype, basedir)
+
+        if (basedir is None or not os.path.isdir(basedir)):
+            #(basedir is not None and not os.path.isdir(basedir))):
+            logger.warning("Unable to find reference catalog: %s" % (str(basedir)))
+            return None
+
+        # Load the SkyTable so we know in what files to look for the catalog"
+        logger.debug("Using catalog found in %s" % (basedir))
+        skytable_filename = "%s/SkyTable.fits" % (basedir)
+        if (not os.path.isfile(skytable_filename)):
+            logger.error("Unable to find catalog index file in %s!" % (basedir))
+            return None
+
+        skytable_hdu = fits.open(skytable_filename)
+
+        select_header_list = None
+        if ('NSELECT' in skytable_hdu[0].header):
+            n_select = skytable_hdu[0].header['NSELECT']
+            select_header_list = [None] * n_select
+            for i in range(n_select):
+                select_header_list[i] = skytable_hdu[0].header['SELECT%02d' % (i+1)]
+            logger.debug("Selecting the following columns: %s" % (", ".join(select_header_list)))
+
+        #print skytable_hdu.info()
+
+        skytable = skytable_hdu['SKY_REGION'].data
+        #print skytable[:3]
+
+        # Select entries that match our list
+        # print ra, dec, radius, type(ra), type(dec), type(radius)
+        #logger.debug("# Searching for stars within %.1f degress around %f , %f ..." % (radius, ra, dec))
+
+        if (not radius == None and radius > 0):
+            min_dec = dec - radius
+            max_dec = dec + radius
+            min_ra = ra - radius/math.cos(math.radians(dec))
+            max_ra = ra + radius/math.cos(math.radians(dec))
+        else:
+            min_dec, max_dec = dec[0], dec[1]
+            min_ra, max_ra = ra[0], ra[1]
+
+        logger.debug("Querying catalog: Ra=%f...%f Dec=%f...%f" % (min_ra, max_ra, min_dec, max_dec))
+
+        if (max_ra > 360.):
+            # This wraps around the high end, shift all ra values by -180
+            # Now all search RAs are ok and around the 180, next also move the catalog values
+            selected = skytable['R_MIN'] < 180
+            skytable['R_MAX'][selected] += 360
+            skytable['R_MIN'][selected] += 360
+        if (min_ra < 0):
+            # Wrap around at the low end
+            selected = skytable['R_MAX'] > 180
+            skytable['R_MAX'][selected] -= 360
+            skytable['R_MIN'][selected] -= 360
+
+        if (True): print ("# Search radius: RA=%.1f ... %.1f   DEC=%.1f ... %.1f" % (min_ra, max_ra, min_dec, max_dec))
+
+        try:
+            needed_catalogs = (skytable['PARENT'] > 0) & (skytable['PARENT'] < 25) & \
+                           (skytable['R_MAX'] > min_ra) & (skytable['R_MIN'] < max_ra) & \
+                            (skytable['D_MAX'] > min_dec) & (skytable['D_MIN'] < max_dec)
+        except KeyError:
+            # try without the PARENT field
+            needed_catalogs =   (skytable['R_MAX'] > min_ra)  & (skytable['R_MIN'] < max_ra) & \
+                            (skytable['D_MAX'] > min_dec) & (skytable['D_MIN'] < max_dec)
+
+        #print skytable[needed_catalogs]
+
+        files_to_read = skytable['NAME'][needed_catalogs]
+        files_to_read = [f.strip() for f in files_to_read]
+        logger.debug(files_to_read)
+
+        # Now quickly go over the list and take care of all filenames that still have a 0x00 in them
+        for i in range(len(files_to_read)):
+            found_at = files_to_read[i].find('\0')
+            if (found_at > 0):
+               files_to_read[i] = files_to_read[i][:found_at]
+
+        # Now we are with the skytable catalog, so close it
+        skytable_hdu.close()
+        del skytable
+
+        #print files_to_read
+
+        # Load all frames, one by one, and select all stars in the valid range.
+        # Then add them to the catalog with RAs and DECs
+        full_catalog = None #numpy.zeros(shape=(0,6))
+        catalog_filenames = []
+
+        # Start iterating though catalogs
+        for catalogname in files_to_read:
+
+            catalogfile = "%s/%s" % (basedir, catalogname)
+            # print catalogfile
+            if (not os.path.isfile(catalogfile)):
+                # not a file, try adding .fits to the end of the filename
+                if (os.path.isfile(catalogfile+".fits")):
+                    catalogfile += ".fits"
+                else:
+                    # neither option (w/ or w/o .fits added is a file)
+                    logger.warning("Catalog file (%s) not found (base-dir: %s)" % (os.path.abspath(catalogfile), basedir))
+                    continue
+
+            try:
+                hdu_cat = fits.open(catalogfile)
+            except:
+                logger.warning("Unable to open catalog file %s" % (catalogfile))
+                continue
+
+            catalog_filenames.append(catalogfile)
+            logger.debug("Adding %s to list of catalog files being used" % (catalogfile))
+
+            # read table into a nd-array buffer
+            cat_full = self.table_to_ndarray(hdu_cat[1], select_header_list=select_header_list,
+                                        overwrite_select=overwrite_select)
+            # print cat_full.shape
+
+            # Read the RA and DEC values
+            cat_ra  = cat_full[:,0]
+            cat_dec = cat_full[:,1]
+
+            # To slect the right region, shift a temporary catalog
+            cat_ra_shifted = cat_ra
+            if (max_ra > 360.):
+                cat_ra_shifted[cat_ra < 180] += 360
+            elif (min_ra < 0):
+                cat_ra_shifted[cat_ra > 180] -= 360
+
+            select_from_cat = (cat_ra_shifted > min_ra) & (cat_ra_shifted < max_ra ) & (cat_dec > min_dec) & (cat_dec < max_dec)
+
+            array_to_add = cat_full[select_from_cat]
+            logger.debug("Read %d sources from %s" % (array_to_add.shape[0], catalogname))
+
+
+            if (full_catalog is None):
+                full_catalog = array_to_add
+            else:
+                full_catalog = np.append(full_catalog, array_to_add, axis=0)
+                #print photom_grizy[:3,:]
+
+            if (full_catalog is None):
+                logger.warning("No stars found in area %s, %s from catalog %s" % (
+                    str(ra), str(dec),
+                    #ra[0], ra[1], dec[0], dec[1],
+                    basedir))
+            else:
+                logger.debug("Read a total of %d stars from %d catalogs!" % (full_catalog.shape[0], len(files_to_read)))
+
+
+
+
+        return full_catalog
+
+    def table_to_ndarray(self, tbhdu, select_header_list=None, overwrite_select=False):
+
+        logger = logging.getLogger("Table2Array")
+        n_entries = tbhdu.header['NAXIS2']
+
+        if (select_header_list is None):
+
+            # no selection of what columns to read
+
+            n_fields = tbhdu.header['TFIELDS']
+
+            logger.debug("Found %d columns and %d rows" % (n_fields, n_entries))
+
+            databuffer = np.empty((n_entries, n_fields))
+            for i in range(n_fields):
+                try:
+                    coldata = np.array(tbhdu.data.field(i))
+                    databuffer[:,i] = coldata[:] #tbhdu.data.field(i)
+                except ValueError:
+                    pass
+
+        else:
+
+            n_fields = len(select_header_list)
+            if (overwrite_select):
+                n_fields += tbhdu.header['TFIELDS']
+                logger.debug("Reading select list of %d columns for %d sources" % (n_fields, n_entries))
+
+            databuffer = np.empty((n_entries, n_fields))
+            for i, fieldname in enumerate(select_header_list):
+                try:
+                    coldata = np.array(tbhdu.data.field(fieldname))
+                    databuffer[:, i] = coldata[:]  # tbhdu.data.field(i)
+                except ValueError:
+                    pass
+
+            if (overwrite_select):
+                for i in range(tbhdu.header['TFIELDS']):
+                    try:
+                        coldata = np.array(tbhdu.data.field(i))
+                        databuffer[:,i+len(select_header_list)] = coldata[:] #tbhdu.data.field(i)
+                    except ValueError:
+                        pass
+
+
+        # print databuffer.shape
+        # numpy.savetxt(fn[:-5]+".dump", databuffer)
+        return databuffer
+
 
 class PS1Catalog:
 
@@ -218,7 +438,7 @@ class PS1Catalog:
 
             pass
 
-    def panstarrs_query (self, ra_deg, dec_deg, ra_max_deg,dec_max_deg, mindet=5, maxsources=50000):
+    def panstarrs_query (self, ra_deg, dec_deg, ra_max_deg,dec_max_deg, mindet=5, maxsources=5000):
 
         returnTable = None
         input = None
@@ -247,16 +467,17 @@ class PS1Catalog:
                                                     needed['D_MIN'], \
                                                     needed['R_MAX'], \
                                                     needed['D_MAX'], \
-                                                    mindet=mindet, maxsources=50000, cacheFile = cachename)
-
-                if not first:
-                    iteminput.readline()
-                    iteminput.readline()
+                                                    mindet=mindet, maxsources=5000, cacheFile = cachename)
 
 
-                f.write(iteminput.read(None))
-                iteminput.close()
-                first = False
+
+                if iteminput is not None:
+                    if not first:
+                        iteminput.readline()
+                        iteminput.readline()
+                    f.write(iteminput.read(None))
+                    iteminput.close()
+                    first = False
             f.close()
             input = "tmp.cat"
         else:
@@ -269,16 +490,19 @@ class PS1Catalog:
 
 
 
-            returnTable = np.genfromtxt (input, names=True, skip_header=1, comments='#', delimiter=',', invalid_raise=False)
+            try:
+                returnTable = np.genfromtxt (input, names=True, skip_header=1, comments='#', delimiter=',', invalid_raise=False)
+                print ("Got  lines from query: " , returnTable.shape)
+            except:
+                returnTable = None
 
-            print ("Got  lines from query: " , returnTable.shape)
             self.PS1toSDSS(returnTable)
 
         return returnTable
 
 
     def do_panstarrs_query(self, ra_deg, dec_deg, ra_max_deg,dec_max_deg, mindet=5,
-                    maxsources=50000,
+                    maxsources=500000,
                     server=('http://gsss.stsci.edu/webservices/vo/CatalogSearch.aspx'),
                     cacheFile = None):
 
@@ -304,10 +528,17 @@ class PS1Catalog:
             area = ("%6f,%6f,%6f,%6f" % (ra_deg,dec_deg,ra_max_deg,dec_max_deg))
             print (area)
             print ("Start retrieve catalog data at ra % 8.4f dec % 8.4f % 8.4f %8.4f" % (ra_deg,dec_deg, ra_max_deg, dec_max_deg))
-            r = requests.get(server,
-                params= {'CAT':"PS1V3OBJECTS", 'BBOX':area , 'MAXOBJ': maxsources,
-                'FORMAT': 'CSV',
-                'ndetections': ('>%d' % mindet)})
+
+            try:
+             r = requests.get(server,
+                    params= {'CAT':"PS1V3OBJECTS", 'BBOX':area , 'MAXOBJ': maxsources,
+                 'FORMAT': 'CSV',
+                    'ndetections': ('>%d' % mindet)})
+            except:
+                r=None
+
+            if (r is None):
+                return
 
 
             # need at least a few lines of input to reasonably proceed.
@@ -381,14 +612,14 @@ import re
 
 import glob
 
-inputlist = glob.glob("../testing/lcogtdata-20170627-28/*.fits.fz")
+inputlist = glob.glob("../testing/g/*.fits.fz")
 
 
 photzpStage = PhotCalib()
 
-ps1 = PS1Catalog("/home/dharbeck/Catalogs/PS1")
+
 #ps1 = PS1Catalog(None)
 
-ps1.panstarrs_query(1,1.2,2,2.1)
-#for image in inputlist:
-#    photzpStage.analyzeImage(image)
+for image in inputlist:
+    print ("Work in image %s" % image)
+    photzpStage.analyzeImage(image)
