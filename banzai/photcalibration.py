@@ -2,24 +2,13 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 import matplotlib
 
-from banzai.stages import Stage
-from banzai import logs
-from banzai import images
-from banzai.utils import image_utils
-import os, subprocess, shlex
 from astropy.io import fits
-import tempfile
 from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord
-from astropy import units
 import numpy as np
-import requests
 import StringIO
-from numpy import rec
-from astropy.io.votable import parse_single_table
 
 import logging
-import pickle
 
 __author__ = 'dharbeck'
 
@@ -44,7 +33,8 @@ class PhotCalib():
     def do_stage(self, images):
 
         for i, image in enumerate(images):
-            logging_tags = logs.image_config_to_tags(image, self.group_by_keywords)
+            pass
+            #logging_tags = logs.image_config_to_tags(image, self.group_by_keywords)
 
     def loadFitsCatalog(self, image):
 
@@ -55,7 +45,8 @@ class PhotCalib():
         :param image: input fits image path+name
         :return:
         """
-        retCatalog = {'fname' : image
+        retCatalog = {'fname' : image,
+                      'instmag' : None
                       }
 
 
@@ -68,10 +59,25 @@ class PhotCalib():
         retCatalog['instfilter'] = testimage['SCI'].header['FILTER']
         retCatalog['airmass'] = testimage['SCI'].header['AIRMASS']
         retCatalog['dateobs'] = testimage['SCI'].header['DATE-OBS']
+        retCatalog['instrument'] = testimage['SCI'].header['INSTRUME']
+        retCatalog['siteid'] = testimage['SCI'].header['SITEID']
+        retCatalog['telescope'] = testimage['SCI'].header['TELID']
 
         if retCatalog['instfilter'] not in self.ps1.FILTERMAPPING:
             print("Filter not viable for photometrric calibration. Sorry")
-            return retCatalog
+            testimage.close()
+            return None
+
+        if (retCatalog['exptime'] < 60):
+            print ("Exposure %s time is too short, ignoring" % (retCatalog['exptime']))
+            testimage.close()
+            return None
+
+        if (retCatalog['instfilter'] != 'gp'):
+            print ("ONly looking at g filter at this time")
+            testimage.close()
+            return None
+
 
         referenceInformation = self.ps1.FILTERMAPPING[retCatalog['instfilter']]
 
@@ -92,6 +98,7 @@ class PhotCalib():
         image_wcs = WCS(testimage['SCI'].header)
         ras, decs = image_wcs.all_pix2world(instCatalog['x'], instCatalog['y'], 1)
 
+        testimage.close()
         # Query reference catalog
 
         reftable = self.ps1.get_reference_catalog(ra, dec,0.5)
@@ -137,7 +144,7 @@ class PhotCalib():
         outbasename = re.sub('.fits.fz', '', imageName)
 
         retCatalog =  self.loadFitsCatalog(imageName)
-        if retCatalog is None:
+        if (retCatalog is None) or (refCatalog['instmag'] is None):
             return
 
         magZP = retCatalog['refmag'] - retCatalog['instmag']
@@ -157,7 +164,7 @@ class PhotCalib():
         plt.xlabel("Reference catalog mag")
         plt.ylabel("Reference Mag - Instrumnetal Mag")
         plt.title("Photometric zeropoint %s %5.2f" % (outbasename, photzp))
-        plt.savefig("%s_zp.png" % (outbasename))
+        #plt.savefig("%s_zp.png" % (outbasename))
         plt.close()
 
         f = plt.figure()
@@ -167,7 +174,7 @@ class PhotCalib():
         plt.xlabel("(g-r)_{SDSS} Reference")
         plt.ylabel("Reference Mag - Instrumnetal Mag - ZP (%5.2f)" % (photzp))
         plt.title("Color correction %s " % (outbasename))
-        plt.savefig("%s_color.png" % (outbasename))
+        #plt.savefig("%s_color.png" % (outbasename))
         plt.close()
 
         f = plt.figure()
@@ -177,11 +184,11 @@ class PhotCalib():
         plt.title("Spacial variation of phot. Zeropoint %s" % (outbasename))
         plt.xlabel("RA")
         plt.ylabel("Dec")
-        plt.savefig("%s_zpmap.png" % (outbasename))
+        #plt.savefig("%s_zpmap.png" % (outbasename))
         plt.close()
 
         with open(pickle, 'a') as f:
-            output = "%s %s %s %s % 6.3f \n" % (imageName, retCatalog['dateobs'], retCatalog['airmass'], retCatalog['instfilter'], photzp)
+            output = "%s %s %s %s %s %s %s % 6.3f \n" % (imageName, retCatalog['dateobs'], retCatalog['siteid'],retCatalog['telescope'],retCatalog['instrument'],retCatalog['instfilter'], retCatalog['airmass'],  photzp)
             print(output)
             f.write(output)
             f.close()
@@ -351,6 +358,7 @@ class PS1IPP:
 
             # read table into a nd-array buffer
             cat_full = hdu_cat[1].data
+            hdu_cat.close()
 
             # Read the RA and DEC values
             cat_ra = cat_full['RA']
@@ -394,21 +402,33 @@ class PS1IPP:
 
 
 from astropy import units as u
+import argparse
 
 matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
 import re
-
+import sys
 import glob
 
 logging.basicConfig(level=logging.DEBUG)
 
-inputlist = glob.glob("../testing/g/*.fits.fz")
+
+if len(sys.argv) > 1:
+    logging.debug ("Open input catalog file: %s" % (sys.argv[1]))
+    inputlist = open (sys.argv[1],"r")
+else:
+    print ("Error: no input list given")
+    exit(1)
+
+
+#inputlist = glob.glob("../testing/g/*.fits.fz")
 
 photzpStage = PhotCalib()
 
 for image in inputlist:
+    image = image.rstrip()
     print("Work in image %s" % image)
     photzpStage.analyzeImage(image)
+
 
