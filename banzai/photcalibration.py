@@ -405,18 +405,18 @@ import re
 import sys
 import glob
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 
 if len(sys.argv) > 1:
     logging.debug ("Open input catalog file: %s" % (sys.argv[1]))
     inputlist = open (sys.argv[1],"r")
 else:
-    print ("Error: no input list given")
-    exit(1)
+    print ("Info: no input list given")
+    inputlist = glob.glob("../testing/g/*.fits.fz")
 
 
-#inputlist = glob.glob("../testing/g/*.fits.fz")
+
 
 photzpStage = PhotCalib()
 
