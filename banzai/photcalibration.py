@@ -14,8 +14,7 @@ __author__ = 'dharbeck'
 
 
 class PhotCalib():
-    # These filters can be readilly transformed to the SDSS griz system with PS as a reference base.
-    VALID_FILTERS = ('gp', 'rp', 'ip', 'zp')
+
 
     # To be replaced with map:
     # LCO filter -> sdss filter name, sdsss g-i color term, airmass term, default zero point.
@@ -138,13 +137,13 @@ class PhotCalib():
 
         return retCatalog
 
-    def analyzeImage(self, imageName, pickle="photzp.db"):
+    def analyzeImage(self, imageName, pickle="photzp.db", generateImages=False):
         """ Do full photometric zeropoint analysis on an image"""
 
         outbasename = re.sub('.fits.fz', '', imageName)
 
         retCatalog =  self.loadFitsCatalog(imageName)
-        if (retCatalog is None) or (refCatalog['instmag'] is None):
+        if (retCatalog is None) or (retCatalog['instmag'] is None):
             return
 
         magZP = retCatalog['refmag'] - retCatalog['instmag']
@@ -152,46 +151,50 @@ class PhotCalib():
         ra = retCatalog['ra']
         dec = retCatalog['dec']
         refcol = retCatalog['refcol']
-        f = plt.figure()
-        plt.plot(refmag, magZP, '.')
-        plt.xlim([10, 22])
-        plt.ylim([20, 26])
 
+        # Calculate the photometric zeropoint.
+        # TODO: Robust median w/ rejection, error propagation.
         photzp = np.median(magZP)
 
-        plt.axhline(y=photzp, color='r', linestyle='-')
+        if generateImages:
 
-        plt.xlabel("Reference catalog mag")
-        plt.ylabel("Reference Mag - Instrumnetal Mag")
-        plt.title("Photometric zeropoint %s %5.2f" % (outbasename, photzp))
-        #plt.savefig("%s_zp.png" % (outbasename))
-        plt.close()
+            plt.figure()
+            plt.plot(refmag, magZP, '.')
+            plt.xlim([10, 22])
+            plt.ylim([20, 26])
+            plt.axhline(y=photzp, color='r', linestyle='-')
+            plt.xlabel("Reference catalog mag")
+            plt.ylabel("Reference Mag - Instrumnetal Mag")
+            plt.title("Photometric zeropoint %s %5.2f" % (outbasename, photzp))
+            plt.savefig("%s_zp.png" % (outbasename))
+            plt.close()
 
-        f = plt.figure()
-        plt.plot(refcol, magZP - photzp, '.')
-        plt.xlim([-0.5, 3])
-        plt.ylim([-1, 1])
-        plt.xlabel("(g-r)_{SDSS} Reference")
-        plt.ylabel("Reference Mag - Instrumnetal Mag - ZP (%5.2f)" % (photzp))
-        plt.title("Color correction %s " % (outbasename))
-        #plt.savefig("%s_color.png" % (outbasename))
-        plt.close()
+            plt.figure()
+            plt.plot(refcol, magZP - photzp, '.')
+            plt.xlim([-0.5, 3])
+            plt.ylim([-1, 1])
+            plt.xlabel("(g-r)_{SDSS} Reference")
+            plt.ylabel("Reference Mag - Instrumnetal Mag - ZP (%5.2f)" % (photzp))
+            plt.title("Color correction %s " % (outbasename))
+            plt.savefig("%s_color.png" % (outbasename))
+            plt.close()
 
-        f = plt.figure()
-        plt.scatter(ra, dec, c=magZP - photzp, vmin=-0.2, vmax=0.2, edgecolor='none',
+            plt.figure()
+            plt.scatter(ra, dec, c=magZP - photzp, vmin=-0.2, vmax=0.2, edgecolor='none',
                     s=9, cmap=matplotlib.pyplot.cm.get_cmap('nipy_spectral'))
-        plt.colorbar()
-        plt.title("Spacial variation of phot. Zeropoint %s" % (outbasename))
-        plt.xlabel("RA")
-        plt.ylabel("Dec")
-        #plt.savefig("%s_zpmap.png" % (outbasename))
-        plt.close()
+            plt.colorbar()
+            plt.title("Spacial variation of phot. Zeropoint %s" % (outbasename))
+            plt.xlabel("RA")
+            plt.ylabel("Dec")
+            plt.savefig("%s_zpmap.png" % (outbasename))
+            plt.close()
 
         with open(pickle, 'a') as f:
             output = "%s %s %s %s %s %s %s % 6.3f \n" % (imageName, retCatalog['dateobs'], retCatalog['siteid'],retCatalog['telescope'],retCatalog['instrument'],retCatalog['instfilter'], retCatalog['airmass'],  photzp)
             print(output)
             f.write(output)
             f.close()
+
         return photzp
 
 
@@ -200,9 +203,10 @@ import math
 
 
 class PS1IPP:
-    """ Calss based on code from WIYn ODI quickreduce pipleline, developped by Ralf Kotula. See:
-    [insert link to githib repository here]
+    """ Class to access local, distilled copy of PS1 data release.
 
+        Based on code from WIYN ODI quickreduce pipeline, developed by Ralf Kotula. See:
+        https://github.com/WIYN-ODI/QuickReduce
     """
 
     FILTERMAPPING = {}
@@ -219,17 +223,19 @@ class PS1IPP:
 
     def __init__(self, basedir):
         self.basedir = basedir
+        self.skytable = None
 
     def PS1toSDSS(self, table):
-        """ PS1 catalog is calibrated to PS12 photometric system, which is different from SDSS
+        """ PS1 catalog is calibrated to PS1 photometric system, which is different from SDSS
 
-     This procedure transforms a catalog from the PS1 system into the SDSS catalog following
-     Finkbeiner 2016
-     http://iopscience.iop.org/article/10.3847/0004-637X/822/2/66/meta#apj522061s2-4 Table 2
+        This procedure transforms a catalog from the PS1 system into the SDSS catalog following
+        Finkbeiner 2016
+        http://iopscience.iop.org/article/10.3847/0004-637X/822/2/66/meta#apj522061s2-4 Table 2
 
-    Note that this transformation is valid for stars only. For the purpose of photometric
-    calibration, it is desirable to select point sources onyl from the input catalog.
-    """
+         Note that this transformation is valid for stars only. For the purpose of photometric
+         calibration, it is desirable to select point sources onyl from the input catalog.
+        """
+
         pscolor = table['g'] - table['i']
 
         for filter in self.ps1colorterms:
@@ -237,15 +243,19 @@ class PS1IPP:
             table[filter] -= colorcorrection
         return table
 
+
+
     def get_reference_catalog(self, ra, dec, radius, overwrite_select=False):
+        """ Read i fits table from local catalog copy. Concatenate tables columns
+           from different fits tables for full coverage.
+        """
 
         logger = logging
-        catalog_filenames = None
 
-        # print "In get_ref_catalog, cattype=%s, dir=%s" % (cattype, basedir)
 
-        if (self.basedir is None or not os.path.isdir(self.basedir)):
-            # (basedir is not None and not os.path.isdir(basedir))):
+
+        # A lot of safeguarding boiler plate to ensure catalog files are valid.
+        if (self.basedir is None) or (not os.path.isdir(self.basedir)):
             logger.warning("Unable to find reference catalog: %s" % (str(self.basedir)))
             return None
 
@@ -256,20 +266,10 @@ class PS1IPP:
             logger.error("Unable to find catalog index file in %s!" % (self.basedir))
             return None
 
+        # Read in the master index hdu
         skytable_hdu = fits.open(skytable_filename)
-
-        select_header_list = None
-        if ('NSELECT' in skytable_hdu[0].header):
-            n_select = skytable_hdu[0].header['NSELECT']
-            select_header_list = [None] * n_select
-            for i in range(n_select):
-                select_header_list[i] = skytable_hdu[0].header['SELECT%02d' % (i + 1)]
-            logger.debug("Selecting the following columns: %s" % (", ".join(select_header_list)))
-
-        # print skytable_hdu.info()
-
         skytable = skytable_hdu['SKY_REGION'].data
-        # print skytable[:3]
+
 
         # Select entries that match our list
         # print ra, dec, radius, type(ra), type(dec), type(radius)
@@ -298,7 +298,7 @@ class PS1IPP:
             skytable['R_MAX'][selected] -= 360
             skytable['R_MIN'][selected] -= 360
 
-        if (True): print("# Search radius: RA=%.1f ... %.1f   DEC=%.1f ... %.1f" % (min_ra, max_ra, min_dec, max_dec))
+        logger.debug("# Search radius: RA=%.1f ... %.1f   DEC=%.1f ... %.1f" % (min_ra, max_ra, min_dec, max_dec))
 
         try:
             needed_catalogs = (skytable['PARENT'] > 0) & (skytable['PARENT'] < 25) & \
@@ -315,17 +315,15 @@ class PS1IPP:
         files_to_read = [f.strip() for f in files_to_read]
         logger.debug(files_to_read)
 
+
+        skytable_hdu.close() # Warning: might erase the loaded data, might need to copy array!
+
         # Now quickly go over the list and take care of all filenames that still have a 0x00 in them
         for i in range(len(files_to_read)):
             found_at = files_to_read[i].find('\0')
             if (found_at > 0):
                 files_to_read[i] = files_to_read[i][:found_at]
 
-        # Now we are with the skytable catalog, so close it
-        skytable_hdu.close()
-        del skytable
-
-        # print files_to_read
 
         # Load all frames, one by one, and select all stars in the valid range.
         # Then add them to the catalog with RAs and DECs
@@ -364,9 +362,7 @@ class PS1IPP:
             cat_ra = cat_full['RA']
             cat_dec = cat_full['DEC']
 
-
-
-            # To slect the right region, shift a temporary catalog
+            # To select the right region, shift a temporary catalog
             cat_ra_shifted = cat_ra
             if (max_ra > 360.):
                 cat_ra_shifted[cat_ra < 180] += 360
@@ -394,10 +390,8 @@ class PS1IPP:
                 logger.debug("Read a total of %d stars from %d catalogs!" % (full_catalog.shape[0], len(files_to_read)))
 
 
-
         self.PS1toSDSS(full_catalog)
         return full_catalog
-
 
 
 
