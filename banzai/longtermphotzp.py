@@ -7,7 +7,7 @@ import dateutil.parser
 
 
 
-def plotlongtermtrend (inputfile, instrument="fl05", filter="gp"):
+def plotlongtermtrend (inputfile, instrument=None, filter=None):
     data = np.genfromtxt(inputfile, unpack=True, dtype=None,\
                   converters={ 1: lambda x: dateutil.parser.parse(x)}, names = ['name','dateobs', 'site', 'telescope', 'camera','filter','airmass','zp'])
 
@@ -34,7 +34,7 @@ def plotlongtermtrend (inputfile, instrument="fl05", filter="gp"):
     plt.xlabel ("DATE-OBS")
     plt.ylabel ("Photometric Zeropint %s" % (filter))
     plt.title ("Long term throughput  %s" % (instrument))
-    plt.savefig ('photzptrend.png')
+    plt.savefig ("photzptrend-%s-%s.png" % (instrument, filter))
 
     plt.figure()
 
@@ -45,7 +45,7 @@ def plotlongtermtrend (inputfile, instrument="fl05", filter="gp"):
     plt.ylabel ("Photomertic Zeropint %s" % (filter))
     plt.ylim([meanzp-0.5,meanzp+0.5])
 
-    plt.savefig ('airmasstrend.png')
+    plt.savefig ("airmasstrend-%s-%s.png"  % (instrument, filter))
 
 
 plotlongtermtrend ("photzp.db")

@@ -40,6 +40,10 @@ class PhotCalib():
         """ Load the photometry catalog from image 'CAT' extension and queries a PS1 matching catalog.
         If query is successful, return a set of matched catalog items
 
+        Errors: if filter is not supported, none is returned
+                if exposure time is < 60 seconds, None is returned.
+
+
 
         :param image: input fits image path+name
         :return:
@@ -51,10 +55,15 @@ class PhotCalib():
 
         testimage = fits.open(image)
 
-        # Boilerplate status infomration
+        # Boilerplate grab of status infomration
         ra = testimage['SCI'].header['CRVAL1']
         dec = testimage['SCI'].header['CRVAL2']
+
         retCatalog['exptime'] = testimage['SCI'].header['EXPTIME']
+
+        #Safeguard against a division by zero downstream.
+        if (retCatalog['exptime'] <= 0):
+            retCatalog['exptime'] = 1
         retCatalog['instfilter'] = testimage['SCI'].header['FILTER']
         retCatalog['airmass'] = testimage['SCI'].header['AIRMASS']
         retCatalog['dateobs'] = testimage['SCI'].header['DATE-OBS']
@@ -62,8 +71,10 @@ class PhotCalib():
         retCatalog['siteid'] = testimage['SCI'].header['SITEID']
         retCatalog['telescope'] = testimage['SCI'].header['TELID']
 
+
+        # Check if filter is supported
         if retCatalog['instfilter'] not in self.ps1.FILTERMAPPING:
-            print("Filter not viable for photometrric calibration. Sorry")
+            print("Filter not viable for photometric calibration. Sorry")
             testimage.close()
             return None
 
@@ -72,17 +83,8 @@ class PhotCalib():
             testimage.close()
             return None
 
-        if (retCatalog['instfilter'] != 'gp'):
-            print ("ONly looking at g filter at this time")
-            testimage.close()
-            return None
-
-
+        # Get the instrumental filter and the matching reference catalog filter names.
         referenceInformation = self.ps1.FILTERMAPPING[retCatalog['instfilter']]
-
-        if (referenceInformation is None):
-            referenceInformation = self.ps1.FILTERMAPPING['rp']
-
         referenceFilterName = referenceInformation['refMag']
 
         # Load photometry catalog from image, and transform into RA/Dec coordinates
@@ -93,25 +95,28 @@ class PhotCalib():
             return None
 
 
+        # Transform the image catalog to RA / Dec based on the WCS solution in the header.
+        # TODO: rerun astrometry.net with a higher order distortion model
 
         image_wcs = WCS(testimage['SCI'].header)
         ras, decs = image_wcs.all_pix2world(instCatalog['x'], instCatalog['y'], 1)
 
+        # Now we have all we waned from the input image, close it
         testimage.close()
-        # Query reference catalog
 
-        reftable = self.ps1.get_reference_catalog(ra, dec,0.5)
+        # Query reference catalog
+        reftable = self.ps1.get_reference_catalog(ra, dec, 0.25)
         if reftable is None:
             print("Failure on image %s, no reference table received." % (image))
             return None
 
         # Start the catalog matching, using astropy skycoords built-in functions.
         cInstrument = SkyCoord(ra=ras * u.degree, dec=decs * u.degree)
-        cReference = SkyCoord(ra=reftable['RA'] * u.degree, dec=reftable['DEC'] * u.degree)
+        cReference  = SkyCoord(ra=reftable['RA'] * u.degree, dec=reftable['DEC'] * u.degree)
         idx, d2d, d3d = cReference.match_to_catalog_sky(cInstrument)
 
-        # reshuffle the source catalog to index-match the reference catalog.
-        #  There is probably as smarter way of doing this!
+        # Reshuffle the source catalog to index-match the reference catalog.
+        # There is probably as smarter way of doing this!
         instCatalogT = np.transpose(instCatalog)[idx]
         instCatalog = np.transpose(instCatalogT)
 
@@ -121,8 +126,7 @@ class PhotCalib():
         # Define a reasonable condition on what is a good match on good photometry
         condition = (distance < 5) & (instCatalog['FLUX'] > 0) & (reftable[referenceFilterName] > 0) & (
         reftable[referenceFilterName] < 26)
-        if (retCatalog['exptime'] <= 0):
-            retCatalog['exptime'] = 1
+
         # Calculate instrumental magnitude from PSF instrument photometry
         instmag = -2.5 * np.log10(instCatalog['FLUX'][condition] / retCatalog['exptime'])
 
@@ -134,19 +138,22 @@ class PhotCalib():
         retCatalog['ra'] = reftable['RA'][condition]
         retCatalog['dec'] = reftable['DEC'][condition]
         retCatalog['matchDistance'] = distance[condition]
+        # TODO: Read error columns from reference and instrument catalogs.
 
         return retCatalog
+
 
     def analyzeImage(self, imageName, pickle="photzp.db", generateImages=False):
         """ Do full photometric zeropoint analysis on an image"""
 
-        outbasename = re.sub('.fits.fz', '', imageName)
+        retCatalog = self.loadFitsCatalog(imageName)
 
-        retCatalog =  self.loadFitsCatalog(imageName)
         if (retCatalog is None) or (retCatalog['instmag'] is None):
             return
 
+        # calculate the per star zeropoint
         magZP = retCatalog['refmag'] - retCatalog['instmag']
+
         refmag = retCatalog['refmag']
         ra = retCatalog['ra']
         dec = retCatalog['dec']
@@ -157,7 +164,7 @@ class PhotCalib():
         photzp = np.median(magZP)
 
         if generateImages:
-
+            outbasename = re.sub('.fits.fz', '', imageName)
             plt.figure()
             plt.plot(refmag, magZP, '.')
             plt.xlim([10, 22])
@@ -215,6 +222,13 @@ class PS1IPP:
     FILTERMAPPING['ip'] = {'refMag': 'i', 'colorTerm': 0.0, 'airmassTerm': 0.0, 'defaultZP': 0.0}
     FILTERMAPPING['zp'] = {'refMag': 'z', 'colorTerm': 0.0, 'airmassTerm': 0.0, 'defaultZP': 0.0}
 
+
+
+    ###  PS to SDSS color transformations according to  Finkbeiner 2016
+    ###  http://iopscience.iop.org/article/10.3847/0004-637X/822/2/66/meta#apj522061s2-4 Table 2
+    ###  Note that this transformation is valid for stars only. For the purpose of photometric
+    ###  calibration, it is desirable to select point sources only from the input catalog.
+
     ps1colorterms = {}
     ps1colorterms['g'] = [-0.01808, -0.13595, 0.01941, -0.00183][::-1]
     ps1colorterms['r'] = [-0.01836, -0.03577, 0.02612, -0.00558][::-1]
@@ -226,16 +240,12 @@ class PS1IPP:
         self.skytable = None
 
     def PS1toSDSS(self, table):
-        """ PS1 catalog is calibrated to PS1 photometric system, which is different from SDSS
-
-        This procedure transforms a catalog from the PS1 system into the SDSS catalog following
-        Finkbeiner 2016
-        http://iopscience.iop.org/article/10.3847/0004-637X/822/2/66/meta#apj522061s2-4 Table 2
-
-         Note that this transformation is valid for stars only. For the purpose of photometric
-         calibration, it is desirable to select point sources onyl from the input catalog.
         """
+        Modify table in situ from PS1 to SDSS, requires colmn names compatible with ps1colorterms definition.
 
+        :param table:
+        :return: modified table.
+        """
         pscolor = table['g'] - table['i']
 
         for filter in self.ps1colorterms:
@@ -250,9 +260,8 @@ class PS1IPP:
            from different fits tables for full coverage.
         """
 
+        # TODO: integrate into logging schema
         logger = logging
-
-
 
         # A lot of safeguarding boiler plate to ensure catalog files are valid.
         if (self.basedir is None) or (not os.path.isdir(self.basedir)):
@@ -396,7 +405,6 @@ class PS1IPP:
 
 
 from astropy import units as u
-import argparse
 
 matplotlib.use('Agg')
 
