@@ -1,14 +1,25 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 import matplotlib
+matplotlib.use('Agg')
 
 from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord
+from astropy import units as u
+
+
 import numpy as np
-import StringIO
+import matplotlib.pyplot as plt
+
+import re
+import sys
+import glob
 
 import logging
+
+logging.basicConfig(level=logging.INFO)
+
 
 __author__ = 'dharbeck'
 
@@ -78,7 +89,7 @@ class PhotCalib():
             testimage.close()
             return None
 
-        if (retCatalog['exptime'] < 60):
+        if (retCatalog['exptime'] < 180):
             print ("Exposure %s time is too short, ignoring" % (retCatalog['exptime']))
             testimage.close()
             return None
@@ -241,16 +252,17 @@ class PS1IPP:
 
     def PS1toSDSS(self, table):
         """
-        Modify table in situ from PS1 to SDSS, requires colmn names compatible with ps1colorterms definition.
+        Modify table in situ from PS1 to SDSS, requires column names compatible with ps1colorterms definition.
 
         :param table:
         :return: modified table.
         """
-        pscolor = table['g'] - table['i']
+        if table is not None:
+            pscolor = table['g'] - table['i']
+            for filter in self.ps1colorterms:
+                colorcorrection = np.polyval(self.ps1colorterms[filter], pscolor)
+                table[filter] -= colorcorrection
 
-        for filter in self.ps1colorterms:
-            colorcorrection = np.polyval(self.ps1colorterms[filter], pscolor)
-            table[filter] -= colorcorrection
         return table
 
 
@@ -404,16 +416,7 @@ class PS1IPP:
 
 
 
-from astropy import units as u
 
-matplotlib.use('Agg')
-
-import matplotlib.pyplot as plt
-import re
-import sys
-import glob
-
-logging.basicConfig(level=logging.INFO)
 
 
 if len(sys.argv) > 1:
@@ -421,16 +424,21 @@ if len(sys.argv) > 1:
     inputlist = open (sys.argv[1],"r")
 else:
     print ("Info: no input list given")
-    inputlist = glob.glob("../testing/g/*.fits.fz")
-
-
+    inputlist = glob.glob("/nfs/archive/engineering/cpt/fl06/*/processed/*-e91.fits.fz")
 
 
 photzpStage = PhotCalib()
+imagedb = "cpt-fl06.db"
+
+#alreadydone = np.genfromtxt(imagedb, unpack=True, dtype=None,
+#                            names = ['name','dateobs', 'site', 'telescope', 'camera','filter','airmass','zp'])
+
+#print (alreadydone['name'])
+#exit (1)
 
 for image in inputlist:
     image = image.rstrip()
-    print("Work in image %s" % image)
-    photzpStage.analyzeImage(image)
+
+    photzpStage.analyzeImage(image, pickle=imagedb)
 
 
