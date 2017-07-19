@@ -2,31 +2,32 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 import matplotlib
 matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
+import dateutil.parser
+import matplotlib
+
 
 from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord
 from astropy import units as u
 
-
 import numpy as np
-import matplotlib.pyplot as plt
-
 import re
 import sys
 import glob
+import os
+import math
 
 import logging
 
 logging.basicConfig(level=logging.INFO)
 
-
 __author__ = 'dharbeck'
 
 
 class PhotCalib():
-
-
     # To be replaced with map:
     # LCO filter -> sdss filter name, sdsss g-i color term, airmass term, default zero point.
     # possibly need this for all site:telescope:camera:filter settings. Maybe start with one
@@ -44,7 +45,7 @@ class PhotCalib():
 
         for i, image in enumerate(images):
             pass
-            #logging_tags = logs.image_config_to_tags(image, self.group_by_keywords)
+            # logging_tags = logs.image_config_to_tags(image, self.group_by_keywords)
 
     def loadFitsCatalog(self, image):
 
@@ -59,10 +60,9 @@ class PhotCalib():
         :param image: input fits image path+name
         :return:
         """
-        retCatalog = {'fname' : image,
-                      'instmag' : None
+        retCatalog = {'fname': image,
+                      'instmag': None
                       }
-
 
         testimage = fits.open(image)
 
@@ -72,7 +72,7 @@ class PhotCalib():
 
         retCatalog['exptime'] = testimage['SCI'].header['EXPTIME']
 
-        #Safeguard against a division by zero downstream.
+        # Safeguard against a division by zero downstream.
         if (retCatalog['exptime'] <= 0):
             retCatalog['exptime'] = 1
         retCatalog['instfilter'] = testimage['SCI'].header['FILTER']
@@ -80,8 +80,8 @@ class PhotCalib():
         retCatalog['dateobs'] = testimage['SCI'].header['DATE-OBS']
         retCatalog['instrument'] = testimage['SCI'].header['INSTRUME']
         retCatalog['siteid'] = testimage['SCI'].header['SITEID']
+        retCatalog['domid'] = testimage['SCI'].header['ENCLOSUR']
         retCatalog['telescope'] = testimage['SCI'].header['TELID']
-
 
         # Check if filter is supported
         if retCatalog['instfilter'] not in self.ps1.FILTERMAPPING:
@@ -89,8 +89,8 @@ class PhotCalib():
             testimage.close()
             return None
 
-        if (retCatalog['exptime'] < 180):
-            print ("Exposure %s time is too short, ignoring" % (retCatalog['exptime']))
+        if (retCatalog['exptime'] < 60):
+            print("Exposure %s time is too short, ignoring" % (retCatalog['exptime']))
             testimage.close()
             return None
 
@@ -102,15 +102,18 @@ class PhotCalib():
         try:
             instCatalog = testimage['CAT'].data
         except:
-            logging.error ("No extension \'CAT\' available for image %s, skipping." % (image))
+            logging.error("No extension \'CAT\' available for image %s, skipping." % (image))
             return None
-
 
         # Transform the image catalog to RA / Dec based on the WCS solution in the header.
         # TODO: rerun astrometry.net with a higher order distortion model
 
         image_wcs = WCS(testimage['SCI'].header)
-        ras, decs = image_wcs.all_pix2world(instCatalog['x'], instCatalog['y'], 1)
+        try:
+            ras, decs = image_wcs.all_pix2world(instCatalog['x'], instCatalog['y'], 1)
+        except:
+            logging.error("Failed to convert images ccordinates to world coordinates. Giving up on file.")
+            return None
 
         # Now we have all we waned from the input image, close it
         testimage.close()
@@ -123,7 +126,7 @@ class PhotCalib():
 
         # Start the catalog matching, using astropy skycoords built-in functions.
         cInstrument = SkyCoord(ra=ras * u.degree, dec=decs * u.degree)
-        cReference  = SkyCoord(ra=reftable['RA'] * u.degree, dec=reftable['DEC'] * u.degree)
+        cReference = SkyCoord(ra=reftable['RA'] * u.degree, dec=reftable['DEC'] * u.degree)
         idx, d2d, d3d = cReference.match_to_catalog_sky(cInstrument)
 
         # Reshuffle the source catalog to index-match the reference catalog.
@@ -136,7 +139,7 @@ class PhotCalib():
 
         # Define a reasonable condition on what is a good match on good photometry
         condition = (distance < 5) & (instCatalog['FLUX'] > 0) & (reftable[referenceFilterName] > 0) & (
-        reftable[referenceFilterName] < 26)
+            reftable[referenceFilterName] < 26)
 
         # Calculate instrumental magnitude from PSF instrument photometry
         instmag = -2.5 * np.log10(instCatalog['FLUX'][condition] / retCatalog['exptime'])
@@ -152,7 +155,6 @@ class PhotCalib():
         # TODO: Read error columns from reference and instrument catalogs.
 
         return retCatalog
-
 
     def analyzeImage(self, imageName, pickle="photzp.db", generateImages=False):
         """ Do full photometric zeropoint analysis on an image"""
@@ -199,7 +201,7 @@ class PhotCalib():
 
             plt.figure()
             plt.scatter(ra, dec, c=magZP - photzp, vmin=-0.2, vmax=0.2, edgecolor='none',
-                    s=9, cmap=matplotlib.pyplot.cm.get_cmap('nipy_spectral'))
+                        s=9, cmap=matplotlib.pyplot.cm.get_cmap('nipy_spectral'))
             plt.colorbar()
             plt.title("Spacial variation of phot. Zeropoint %s" % (outbasename))
             plt.xlabel("RA")
@@ -208,7 +210,10 @@ class PhotCalib():
             plt.close()
 
         with open(pickle, 'a') as f:
-            output = "%s %s %s %s %s %s %s % 6.3f \n" % (imageName, retCatalog['dateobs'], retCatalog['siteid'],retCatalog['telescope'],retCatalog['instrument'],retCatalog['instfilter'], retCatalog['airmass'],  photzp)
+            output = "%s %s %s %s %s %s %s %s % 6.3f \n" % (
+                imageName, retCatalog['dateobs'], retCatalog['siteid'], retCatalog['domid'],
+                retCatalog['telescope'], retCatalog['instrument'], retCatalog['instfilter'],
+                retCatalog['airmass'], photzp)
             print(output)
             f.write(output)
             f.close()
@@ -216,8 +221,6 @@ class PhotCalib():
         return photzp
 
 
-import os
-import math
 
 
 class PS1IPP:
@@ -232,8 +235,6 @@ class PS1IPP:
     FILTERMAPPING['rp'] = {'refMag': 'r', 'colorTerm': 0.0, 'airmassTerm': 0.0, 'defaultZP': 0.0}
     FILTERMAPPING['ip'] = {'refMag': 'i', 'colorTerm': 0.0, 'airmassTerm': 0.0, 'defaultZP': 0.0}
     FILTERMAPPING['zp'] = {'refMag': 'z', 'colorTerm': 0.0, 'airmassTerm': 0.0, 'defaultZP': 0.0}
-
-
 
     ###  PS to SDSS color transformations according to  Finkbeiner 2016
     ###  http://iopscience.iop.org/article/10.3847/0004-637X/822/2/66/meta#apj522061s2-4 Table 2
@@ -265,8 +266,6 @@ class PS1IPP:
 
         return table
 
-
-
     def get_reference_catalog(self, ra, dec, radius, overwrite_select=False):
         """ Read i fits table from local catalog copy. Concatenate tables columns
            from different fits tables for full coverage.
@@ -290,7 +289,6 @@ class PS1IPP:
         # Read in the master index hdu
         skytable_hdu = fits.open(skytable_filename)
         skytable = skytable_hdu['SKY_REGION'].data
-
 
         # Select entries that match our list
         # print ra, dec, radius, type(ra), type(dec), type(radius)
@@ -336,15 +334,13 @@ class PS1IPP:
         files_to_read = [f.strip() for f in files_to_read]
         logger.debug(files_to_read)
 
-
-        skytable_hdu.close() # Warning: might erase the loaded data, might need to copy array!
+        skytable_hdu.close()  # Warning: might erase the loaded data, might need to copy array!
 
         # Now quickly go over the list and take care of all filenames that still have a 0x00 in them
         for i in range(len(files_to_read)):
             found_at = files_to_read[i].find('\0')
             if (found_at > 0):
                 files_to_read[i] = files_to_read[i][:found_at]
-
 
         # Load all frames, one by one, and select all stars in the valid range.
         # Then add them to the catalog with RAs and DECs
@@ -391,7 +387,7 @@ class PS1IPP:
                 cat_ra_shifted[cat_ra > 180] -= 360
 
             select_from_cat = (cat_ra_shifted > min_ra) & (cat_ra_shifted < max_ra) & (cat_dec > min_dec) & (
-            cat_dec < max_dec)
+                cat_dec < max_dec)
 
             array_to_add = cat_full[select_from_cat]
             logger.debug("Read %d sources from %s" % (array_to_add.shape[0], catalogname))
@@ -410,35 +406,34 @@ class PS1IPP:
             else:
                 logger.debug("Read a total of %d stars from %d catalogs!" % (full_catalog.shape[0], len(files_to_read)))
 
-
         self.PS1toSDSS(full_catalog)
         return full_catalog
 
+import longtermphotzp
 
 
+if __name__ == '__main__':
+    photzpStage = PhotCalib()
+    imagedb = "ogg-fs02.db"
+    search = "/nfs/archive/engineering/ogg/fs02/*/processed/*-e91.fits.fz"
+
+    if len(sys.argv) > 1:
+        logging.debug("Open input catalog file: %s" % (sys.argv[1]))
+        inputlist = open(sys.argv[1], "r")
+
+    else:
+        print("Info: no input list given, crawling through directories\n%s" % (search))
+        inputlist = glob.glob(search)
+
+        print("Found %d entries. Cleaning duplicate entries..." % len(inputlist))
+        #imagesread = longtermphotzp.readDataFile(imagedb)
+        #clearedinputlist = [x for x in inputlist if x not in imagesread["name"]]
+        #inputlist = clearedinputlist
+        #print("%d entries left" % len(inputlist))
 
 
+    print("Starting analysis")
+    for image in inputlist:
+        image = image.rstrip()
 
-if len(sys.argv) > 1:
-    logging.debug ("Open input catalog file: %s" % (sys.argv[1]))
-    inputlist = open (sys.argv[1],"r")
-else:
-    print ("Info: no input list given")
-    inputlist = glob.glob("/nfs/archive/engineering/cpt/fl06/*/processed/*-e91.fits.fz")
-
-
-photzpStage = PhotCalib()
-imagedb = "cpt-fl06.db"
-
-#alreadydone = np.genfromtxt(imagedb, unpack=True, dtype=None,
-#                            names = ['name','dateobs', 'site', 'telescope', 'camera','filter','airmass','zp'])
-
-#print (alreadydone['name'])
-#exit (1)
-
-for image in inputlist:
-    image = image.rstrip()
-
-    photzpStage.analyzeImage(image, pickle=imagedb)
-
-
+        photzpStage.analyzeImage(image, pickle=imagedb)

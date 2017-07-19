@@ -10,11 +10,14 @@ import dateutil.parser
 airmasscorrection = {'gp':0.2, 'rp': 0.12, 'ip': 0.058, 'zp': 0.04,}
 
 
+def readDataFile (inputfile):
+    return np.genfromtxt(inputfile, unpack=True, dtype=None,skip_footer=5, \
+                    converters={ 1: lambda x: dateutil.parser.parse(x)}, names = ['name','dateobs', 'site', 'dome', 'telescope', 'camera','filter','airmass','zp'])
+
+
 def plotlongtermtrend (inputfile, instrument=None, filter=None):
 
-    data = np.genfromtxt(inputfile, unpack=True, dtype=None,skip_footer=5,\
-                  converters={ 1: lambda x: dateutil.parser.parse(x)}, names = ['name','dateobs', 'site', 'telescope', 'camera','filter','airmass','zp'])
-
+    data = readDataFile(inputfile)
 
     selection = np.ones(len (data['name']), dtype=bool)
 
@@ -34,7 +37,8 @@ def plotlongtermtrend (inputfile, instrument=None, filter=None):
     ymax = 24.2
     if instrument.startswith("fl"):
         ymax = 23.75
-
+    if instrument.startswith("kb"):
+        ymax = 22
 
     meanzp = np.nanmedian(zpselect)
     zp_air = zpselect + airmasscorrection[filter] * airmasselect - airmasscorrection[filter]
@@ -64,8 +68,8 @@ def plotlongtermtrend (inputfile, instrument=None, filter=None):
     plt.savefig ("airmasstrend-%s-%s.png"  % (instrument, filter))
 
 
-plotlongtermtrend ("elp.db", filter='gp', instrument='fl05')
-plotlongtermtrend ("elp.db", filter='rp', instrument='fl05')
+
+if __name__ == '__main__':
 
 #plotlongtermtrend ("ogg-fs02.db", filter='gp', instrument='fs02')
 #plotlongtermtrend ("ogg-fs02.db", filter='rp', instrument='fs02')
@@ -73,18 +77,43 @@ plotlongtermtrend ("elp.db", filter='rp', instrument='fl05')
 #plotlongtermtrend ("coj-fs01.db", filter='gp', instrument='fs01')
 #plotlongtermtrend ("coj-fs01.db", filter='rp', instrument='fs01')
 
-plotlongtermtrend ("lsc-fl03.db", filter='gp', instrument='fl03')
-plotlongtermtrend ("lsc-fl03.db", filter='rp', instrument='fl03')
+    plotlongtermtrend ("elp-fl05.db", filter='gp', instrument='fl05')
+    plotlongtermtrend ("elp-fl05.db", filter='rp', instrument='fl05')
+#
+#
+# plotlongtermtrend ("lsc-fl03.db", filter='gp', instrument='fl03')
+# plotlongtermtrend ("lsc-fl03.db", filter='rp', instrument='fl03')
+#
+# plotlongtermtrend ("lsc-fl04.db", filter='gp', instrument='fl04')
+# plotlongtermtrend ("lsc-fl04.db", filter='rp', instrument='fl04')
+#
+# plotlongtermtrend ("cpt-fl06.db", filter='gp', instrument='fl06')
+# plotlongtermtrend ("cpt-fl06.db", filter='rp', instrument='fl06')
+#
+#
+# plotlongtermtrend ("lsc-fl15.db", filter='gp', instrument='fl15')
+# plotlongtermtrend ("lsc-fl15.db", filter='rp', instrument='fl15')
+#
+# plotlongtermtrend ("cpt-fl14.db", filter='gp', instrument='fl14')
+# plotlongtermtrend ("cpt-fl14.db", filter='rp', instrument='fl14')
+#
+#
+# plotlongtermtrend ("cpt-fl16.db", filter='gp', instrument='fl16')
+# plotlongtermtrend ("cpt-fl16.db", filter='rp', instrument='fl16')
 
-plotlongtermtrend ("lsc-fl04.db", filter='gp', instrument='fl04')
-plotlongtermtrend ("lsc-fl04.db", filter='rp', instrument='fl04')
+    plotlongtermtrend ("coj-kb97.db", filter='gp', instrument='kb97')
+    plotlongtermtrend ("coj-kb97.db", filter='rp', instrument='kb97')
 
-plotlongtermtrend ("cpt-fl06.db", filter='gp', instrument='fl06')
-plotlongtermtrend ("cpt-fl06.db", filter='rp', instrument='fl06')
+    plotlongtermtrend ("tfn-kb29.db", filter='gp', instrument='kb29')
+    plotlongtermtrend ("tfn-kb29.db", filter='rp', instrument='kb29')
+
+    plotlongtermtrend ("ogg-kb27.db", filter='gp', instrument='kb27')
+    plotlongtermtrend ("ogg-kb27.db", filter='rp', instrument='kb27')
+
+    plotlongtermtrend ("ogg-kb82.db", filter='gp', instrument='kb82')
+    plotlongtermtrend ("ogg-kb82.db", filter='rp', instrument='kb82')
 
 
-plotlongtermtrend ("lsc-fl15.db", filter='gp', instrument='fl15')
-plotlongtermtrend ("lsc-fl15.db", filter='rp', instrument='fl15')
 
-plotlongtermtrend ("cpt-fl16.db", filter='gp', instrument='fl16')
-plotlongtermtrend ("cpt-fl16.db", filter='rp', instrument='fl16')
+    plotlongtermtrend ("coj-kb98.db", filter='gp', instrument='kb98')
+    plotlongtermtrend ("coj-kb98.db", filter='rp', instrument='kb98')
