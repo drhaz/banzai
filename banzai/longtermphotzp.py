@@ -71,8 +71,8 @@ def plotlongtermtrend (inputfile, instrument=None, filter=None):
 
 if __name__ == '__main__':
 
-#plotlongtermtrend ("ogg-fs02.db", filter='gp', instrument='fs02')
-#plotlongtermtrend ("ogg-fs02.db", filter='rp', instrument='fs02')
+    plotlongtermtrend ("ogg-fs02.db", filter='gp', instrument='fs02')
+    plotlongtermtrend ("ogg-fs02.db", filter='rp', instrument='fs02')
 
 #plotlongtermtrend ("coj-fs01.db", filter='gp', instrument='fs01')
 #plotlongtermtrend ("coj-fs01.db", filter='rp', instrument='fs01')
