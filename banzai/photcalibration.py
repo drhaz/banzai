@@ -156,7 +156,7 @@ class PhotCalib():
 
         return retCatalog
 
-    def analyzeImage(self, imageName, pickle="photzp.db", generateImages=False):
+    def analyzeImage(self, imageName, pickle="photzp.db", outputimageRootDir=None):
         """ Do full photometric zeropoint analysis on an image"""
 
         retCatalog = self.loadFitsCatalog(imageName)
@@ -176,17 +176,18 @@ class PhotCalib():
         # TODO: Robust median w/ rejection, error propagation.
         photzp = np.median(magZP)
 
-        if generateImages:
-            outbasename = re.sub('.fits.fz', '', imageName)
+        if (outputimageRootDir is not None) & (os.path.exists(outputimageRootDir)):
+            outbasename = os.path.basename(imageName)
+            outbasename = re.sub('.fits.fz', '', outbasename)
             plt.figure()
             plt.plot(refmag, magZP, '.')
             plt.xlim([10, 22])
             plt.ylim([20, 26])
             plt.axhline(y=photzp, color='r', linestyle='-')
             plt.xlabel("Reference catalog mag")
-            plt.ylabel("Reference Mag - Instrumnetal Mag")
+            plt.ylabel("Reference Mag - Instrumnetal Mag (%s)" % (retCatalog['instfilter']))
             plt.title("Photometric zeropoint %s %5.2f" % (outbasename, photzp))
-            plt.savefig("%s_zp.png" % (outbasename))
+            plt.savefig("%s/%s_%s_zp.png" % (outputimageRootDir,outbasename,retCatalog['instfilter']))
             plt.close()
 
             plt.figure()
@@ -194,19 +195,19 @@ class PhotCalib():
             plt.xlim([-0.5, 3])
             plt.ylim([-1, 1])
             plt.xlabel("(g-r)_{SDSS} Reference")
-            plt.ylabel("Reference Mag - Instrumnetal Mag - ZP (%5.2f)" % (photzp))
+            plt.ylabel("Reference Mag - Instrumnetal Mag - ZP (%5.2f) %s" % (photzp,retCatalog['instfilter']))
             plt.title("Color correction %s " % (outbasename))
-            plt.savefig("%s_color.png" % (outbasename))
+            plt.savefig("%s/%s_%s_color.png" % (outputimageRootDir,outbasename,retCatalog['instfilter']))
             plt.close()
 
             plt.figure()
             plt.scatter(ra, dec, c=magZP - photzp, vmin=-0.2, vmax=0.2, edgecolor='none',
                         s=9, cmap=matplotlib.pyplot.cm.get_cmap('nipy_spectral'))
             plt.colorbar()
-            plt.title("Spacial variation of phot. Zeropoint %s" % (outbasename))
+            plt.title("Spacial variation of phot. Zeropoint %s %s" % (outbasename,retCatalog['instfilter']))
             plt.xlabel("RA")
             plt.ylabel("Dec")
-            plt.savefig("%s_zpmap.png" % (outbasename))
+            plt.savefig("%s/%s_%s_zpmap.png" % (outputimageRootDir, outbasename,retCatalog['instfilter']))
             plt.close()
 
         with open(pickle, 'a') as f:
@@ -414,8 +415,10 @@ import longtermphotzp
 
 if __name__ == '__main__':
     photzpStage = PhotCalib()
-    imagedb = "ogg-fs02.db"
-    search = "/nfs/archive/engineering/ogg/fs02/*/processed/*-e91.fits.fz"
+    camera = "fs01"
+    site= "coj"
+    imagedb = "%s-%s.db" % (site,camera)
+    search = "/nfs/archive/engineering/%s/%s/*/processed/*-e91.fits.fz" % (site, camera)
 
     if len(sys.argv) > 1:
         logging.debug("Open input catalog file: %s" % (sys.argv[1]))
@@ -436,4 +439,4 @@ if __name__ == '__main__':
     for image in inputlist:
         image = image.rstrip()
 
-        photzpStage.analyzeImage(image, pickle=imagedb)
+        photzpStage.analyzeImage(image, pickle=imagedb, outputimageRootDir="/home/dharbeck/lcozpplots")
