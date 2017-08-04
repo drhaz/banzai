@@ -3,26 +3,23 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-
-import dateutil.parser
-import matplotlib
-
-
 from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord
 from astropy import units as u
-
 import numpy as np
+import argparse
 import re
-import sys
 import glob
 import os
 import math
 
 import logging
 
-logging.basicConfig(level=logging.INFO)
+_logger = logging.getLogger(__name__)
+_logger.setLevel(logging.INFO)
+logging.basicConfig(format='%(asctime)-15s %(levelname)s\t %(message)s', level=logging.NOTSET)
+
 
 __author__ = 'dharbeck'
 
@@ -38,7 +35,12 @@ class PhotCalib():
         # super(PhotCalib, self).__init__(pipeline_context)
         self.ps1 = PS1IPP("/home/dharbeck/Catalogs/ps1odi/panstarrs/")
 
-    def inInCatalog(dec):
+    def isInCatalogFootprint(dec):
+        """ Verify if image is in catalog footprint.
+            TODO: Account for image field of view
+        """
+
+        # PanSTARRS has valid entries for DEc > - 30 degrees
         return dec >= -30.0
 
     def do_stage(self, images):
@@ -48,33 +50,35 @@ class PhotCalib():
             # logging_tags = logs.image_config_to_tags(image, self.group_by_keywords)
 
     def loadFitsCatalog(self, image):
+        """ Load the banzai-generated photometry catalog from  'CAT' extension, queries PS1 catalog for image FoV, and
+        returns a cross-matched catalog.
 
-        """ Load the photometry catalog from image 'CAT' extension and queries a PS1 matching catalog.
-        If query is successful, return a set of matched catalog items
-
-        Errors: if filter is not supported, none is returned
-                if exposure time is < 60 seconds, None is returned.
+        Errors conditions:
+         if photometricfilter is not supported, none is returned
+         if exposure time is < 60 seconds, None is returned.
 
 
 
         :param image: input fits image path+name
         :return:
         """
+        # Build up a baseline refernce catlog with meta data
         retCatalog = {'fname': image,
                       'instmag': None
                       }
 
+        # Read banzai star catalog
         testimage = fits.open(image)
 
         # Boilerplate grab of status infomration
         ra = testimage['SCI'].header['CRVAL1']
         dec = testimage['SCI'].header['CRVAL2']
-
         retCatalog['exptime'] = testimage['SCI'].header['EXPTIME']
 
         # Safeguard against a division by zero downstream.
         if (retCatalog['exptime'] <= 0):
             retCatalog['exptime'] = 1
+
         retCatalog['instfilter'] = testimage['SCI'].header['FILTER']
         retCatalog['airmass'] = testimage['SCI'].header['AIRMASS']
         retCatalog['dateobs'] = testimage['SCI'].header['DATE-OBS']
@@ -85,12 +89,12 @@ class PhotCalib():
 
         # Check if filter is supported
         if retCatalog['instfilter'] not in self.ps1.FILTERMAPPING:
-            print("Filter not viable for photometric calibration. Sorry")
+            _logger.debug("Filter not viable for photometric calibration. Sorry")
             testimage.close()
             return None
 
         if (retCatalog['exptime'] < 60):
-            print("Exposure %s time is too short, ignoring" % (retCatalog['exptime']))
+            _logger.debug("Exposure %s time is deemed too short, ignoring" % (retCatalog['exptime']))
             testimage.close()
             return None
 
@@ -102,7 +106,7 @@ class PhotCalib():
         try:
             instCatalog = testimage['CAT'].data
         except:
-            logging.error("No extension \'CAT\' available for image %s, skipping." % (image))
+            _logger.error("No extension \'CAT\' available for image %s, skipping." % (image))
             return None
 
         # Transform the image catalog to RA / Dec based on the WCS solution in the header.
@@ -112,7 +116,7 @@ class PhotCalib():
         try:
             ras, decs = image_wcs.all_pix2world(instCatalog['x'], instCatalog['y'], 1)
         except:
-            logging.error("Failed to convert images ccordinates to world coordinates. Giving up on file.")
+            _logger.error("Failed to convert images ccordinates to world coordinates. Giving up on file.")
             return None
 
         # Now we have all we waned from the input image, close it
@@ -121,7 +125,7 @@ class PhotCalib():
         # Query reference catalog
         reftable = self.ps1.get_reference_catalog(ra, dec, 0.25)
         if reftable is None:
-            print("Failure on image %s, no reference table received." % (image))
+            _logger.warn("Failure on image %s, no reference catalog received." % (image))
             return None
 
         # Start the catalog matching, using astropy skycoords built-in functions.
@@ -152,7 +156,7 @@ class PhotCalib():
         retCatalog['ra'] = reftable['RA'][condition]
         retCatalog['dec'] = reftable['DEC'][condition]
         retCatalog['matchDistance'] = distance[condition]
-        # TODO: Read error columns from reference and instrument catalogs.
+        # TODO: Read photometric error columns from reference and instrument catalogs, properly propagate error.
 
         return retCatalog
 
@@ -176,7 +180,7 @@ class PhotCalib():
         # TODO: Robust median w/ rejection, error propagation.
         photzp = np.median(magZP)
 
-        if (outputimageRootDir is not None) & (os.path.exists(outputimageRootDir)):
+        if (outputimageRootDir is not None) and (os.path.exists(outputimageRootDir)):
             outbasename = os.path.basename(imageName)
             outbasename = re.sub('.fits.fz', '', outbasename)
             plt.figure()
@@ -210,12 +214,13 @@ class PhotCalib():
             plt.savefig("%s/%s_%s_zpmap.png" % (outputimageRootDir, outbasename,retCatalog['instfilter']))
             plt.close()
 
+
         with open(pickle, 'a') as f:
             output = "%s %s %s %s %s %s %s %s % 6.3f \n" % (
                 imageName, retCatalog['dateobs'], retCatalog['siteid'], retCatalog['domid'],
                 retCatalog['telescope'], retCatalog['instrument'], retCatalog['instfilter'],
                 retCatalog['airmass'], photzp)
-            print(output)
+            _logger.info(output)
             f.write(output)
             f.close()
 
@@ -232,15 +237,18 @@ class PS1IPP:
     """
 
     FILTERMAPPING = {}
-    FILTERMAPPING['gp'] = {'refMag': 'g', 'colorTerm': 0.0, 'airmassTerm': 0.2, 'defaultZP': 0.0}
-    FILTERMAPPING['rp'] = {'refMag': 'r', 'colorTerm': 0.0, 'airmassTerm': 0.0, 'defaultZP': 0.0}
-    FILTERMAPPING['ip'] = {'refMag': 'i', 'colorTerm': 0.0, 'airmassTerm': 0.0, 'defaultZP': 0.0}
-    FILTERMAPPING['zp'] = {'refMag': 'z', 'colorTerm': 0.0, 'airmassTerm': 0.0, 'defaultZP': 0.0}
+    FILTERMAPPING['gp'] = {'refMag': 'g', 'colorTerm': 0.0, 'airmassTerm': 0.20, 'defaultZP': 0.0}
+    FILTERMAPPING['rp'] = {'refMag': 'r', 'colorTerm': 0.0, 'airmassTerm': 0.12, 'defaultZP': 0.0}
+    FILTERMAPPING['ip'] = {'refMag': 'i', 'colorTerm': 0.0, 'airmassTerm': 0.08, 'defaultZP': 0.0}
+    FILTERMAPPING['zp'] = {'refMag': 'z', 'colorTerm': 0.0, 'airmassTerm': 0.05, 'defaultZP': 0.0}
 
     ###  PS to SDSS color transformations according to  Finkbeiner 2016
     ###  http://iopscience.iop.org/article/10.3847/0004-637X/822/2/66/meta#apj522061s2-4 Table 2
     ###  Note that this transformation is valid for stars only. For the purpose of photometric
     ###  calibration, it is desirable to select point sources only from the input catalog.
+
+    ## Why reverse the order of the color term entries? Data are entered in the order as they are
+    ## shown in paper. Reverse after the fact to avoid confusion when looking at paper
 
     ps1colorterms = {}
     ps1colorterms['g'] = [-0.01808, -0.13595, 0.01941, -0.00183][::-1]
@@ -410,33 +418,68 @@ class PS1IPP:
         self.PS1toSDSS(full_catalog)
         return full_catalog
 
-import longtermphotzp
+#import longtermphotzp
 
+def crawlDirectory (site, camera, basedir='/nfs/archive/engineering',outputimageRootDir=None):
 
-if __name__ == '__main__':
     photzpStage = PhotCalib()
-    camera = "fs01"
-    site= "coj"
-    imagedb = "%s-%s.db" % (site,camera)
-    search = "/nfs/archive/engineering/%s/%s/*/processed/*-e91.fits.fz" % (site, camera)
 
-    if len(sys.argv) > 1:
-        logging.debug("Open input catalog file: %s" % (sys.argv[1]))
-        inputlist = open(sys.argv[1], "r")
+    imagedb = "/home/dharbeck/lcozpplots/%s-%s.db" % (site,camera)
+    search = "%s/%s/%s/*/processed/*-e91.fits.fz" % (basedir, site, camera)
+    inputlist = glob.glob(search)
 
-    else:
-        print("Info: no input list given, crawling through directories\n%s" % (search))
-        inputlist = glob.glob(search)
-
-        print("Found %d entries. Cleaning duplicate entries..." % len(inputlist))
-        #imagesread = longtermphotzp.readDataFile(imagedb)
-        #clearedinputlist = [x for x in inputlist if x not in imagesread["name"]]
-        #inputlist = clearedinputlist
-        #print("%d entries left" % len(inputlist))
-
-
+    print("Found %d entries. Cleaning duplicate entries..." % len(inputlist))
     print("Starting analysis")
+
     for image in inputlist:
         image = image.rstrip()
+        photzpStage.analyzeImage(image, pickle=imagedb, outputimageRootDir=outputimageRootDir)
 
-        photzpStage.analyzeImage(image, pickle=imagedb, outputimageRootDir="/home/dharbeck/lcozpplots")
+
+def crawlSite ( site, type, basedir='/nfs/archive/engineering', outputimageRootDir=None):
+    searchdir = "%s/%s/%s*" % (basedir, site, type)
+
+    cameralist = glob.glob (searchdir)
+    cameras = []
+    for candidate in cameralist:
+        cameras.append ( (site, os.path.basename(os.path.normpath(candidate)), outputimageRootDir))
+
+
+    for setup in cameras:
+        print ( setup[0],setup[1],setup[2])
+        #crawlDirectory(setup[0],setup[1],setup[2])
+
+
+
+def parseCommandLine ():
+    parser = argparse.ArgumentParser(
+        description='Determine photometric zeropoint of banzai-reduced LCO imaging data.')
+    parser.add_argument("--diagnosticplotsdir", dest='outputimageRootDir', default=None,
+                    help='Output directory for diagnostic plots. No plots generated if option is omitted. ')
+
+    parser.add_argument('--imagedbPrefix', dest='imagedbPrefix', default='/home/dharbeck/lcozpplots', help = 'Result output directory')
+    parser.add_argument('--rootdir', dest='rootdir', default='/nfs/archive/engineering', help="data root directory")
+    parser.add_argument('--site', dest='site', default='lsc', help='sites code for camera')
+    parser.add_argument('--camera', dest='camera', default='fl03', help='camera to process')
+
+
+    args = parser.parse_args()
+    print (args)
+    pass
+
+import multiprocessing
+if __name__ == '__main__':
+   # crawlDirectory('elp','fl05')
+    global args
+
+    args = parseCommandLine()
+
+    sites = ('lsc','cpt','ogg','coj','tfn')
+    cameras = ("fl","fs","kb")
+
+
+
+    for site in sites:
+        for cameratype in cameras:
+            crawlSite(site, cameratype)
+

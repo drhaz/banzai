@@ -7,16 +7,16 @@ import datetime
 import dateutil.parser
 
 
-airmasscorrection = {'gp':0.2, 'rp': 0.12, 'ip': 0.058, 'zp': 0.04,}
+airmasscorrection = {'gp':0.2, 'rp': 0.12, 'ip': 0.08, 'zp': 0.05,}
 
 def readDataFile (inputfile):
     return np.genfromtxt(inputfile, unpack=True, dtype=None,skip_footer=5, \
                     converters={ 1: lambda x: dateutil.parser.parse(x)}, names = ['name','dateobs', 'site', 'dome', 'telescope', 'camera','filter','airmass','zp'])
 
 
-def plotlongtermtrend (site, enclosure=None, elescope=None, instrument=None, filter=None, basedirectory="/home/dharbeck/lcozpplots"):
+def plotlongtermtrend (site, enclosure=None, telescope=None, instrument=None, filter=None, basedirectory="/home/dharbeck/lcozpplots"):
 
-    inputfile = "%s-%s.db" % (site, instrument)
+    inputfile = "%s/%s-%s.db" % (basedirectory, site, instrument)
 
     mirrorfilename = "%s/mirror_%s.db" % (basedirectory,instrument)
     data = readDataFile(inputfile)
@@ -80,7 +80,7 @@ if __name__ == '__main__':
 
     plotlongtermtrend ("ogg", filter='gp', instrument='fs02')
     plotlongtermtrend ("ogg", filter='rp', instrument='fs02')
-
+    #
     plotlongtermtrend ("coj", filter='gp', instrument='fs01')
     plotlongtermtrend ("coj", filter='rp', instrument='fs01')
 
@@ -88,39 +88,39 @@ if __name__ == '__main__':
     plotlongtermtrend ("elp", filter='rp', instrument='fl05')
 #
 #
-# plotlongtermtrend ("lsc-fl03.db", filter='gp', instrument='fl03')
-# plotlongtermtrend ("lsc-fl03.db", filter='rp', instrument='fl03')
+    plotlongtermtrend ("lsc", filter='gp', instrument='fl03')
+    plotlongtermtrend ("lsc", filter='rp', instrument='fl03')
 #
-# plotlongtermtrend ("lsc-fl04.db", filter='gp', instrument='fl04')
-# plotlongtermtrend ("lsc-fl04.db", filter='rp', instrument='fl04')
+    plotlongtermtrend ("lsc", filter='gp', instrument='fl04')
+    plotlongtermtrend ("lsc", filter='rp', instrument='fl04')
 #
-# plotlongtermtrend ("cpt-fl06.db", filter='gp', instrument='fl06')
-# plotlongtermtrend ("cpt-fl06.db", filter='rp', instrument='fl06')
-#
-#
-# plotlongtermtrend ("lsc-fl15.db", filter='gp', instrument='fl15')
-# plotlongtermtrend ("lsc-fl15.db", filter='rp', instrument='fl15')
-#
-# plotlongtermtrend ("cpt-fl14.db", filter='gp', instrument='fl14')
-# plotlongtermtrend ("cpt-fl14.db", filter='rp', instrument='fl14')
+    plotlongtermtrend ("cpt", filter='gp', instrument='fl06')
+    plotlongtermtrend ("cpt", filter='rp', instrument='fl06')
 #
 #
-# plotlongtermtrend ("cpt-fl16.db", filter='gp', instrument='fl16')
-# plotlongtermtrend ("cpt-fl16.db", filter='rp', instrument='fl16')
+    plotlongtermtrend ("lsc", filter='gp', instrument='fl15')
+    plotlongtermtrend ("lsc", filter='rp', instrument='fl15')
+#
+    plotlongtermtrend ("cpt", filter='gp', instrument='fl14')
+    plotlongtermtrend ("cpt", filter='rp', instrument='fl14')
+#
+#
+    plotlongtermtrend ("cpt", filter='gp', instrument='fl16')
+    plotlongtermtrend ("cpt", filter='rp', instrument='fl16')
 
     plotlongtermtrend ("coj", filter='gp', instrument='kb97')
     plotlongtermtrend ("coj", filter='rp', instrument='kb97')
-
+    #
     plotlongtermtrend ("tfn", filter='gp', instrument='kb29')
     plotlongtermtrend ("tfn", filter='rp', instrument='kb29')
-
+    #
     plotlongtermtrend ("ogg", filter='gp', instrument='kb27')
     plotlongtermtrend ("ogg", filter='rp', instrument='kb27')
-
+    #
     plotlongtermtrend ("ogg", filter='gp', instrument='kb82')
     plotlongtermtrend ("ogg", filter='rp', instrument='kb82')
-
-
-
+    #
+    #
+    #
     plotlongtermtrend ("coj", filter='gp', instrument='kb98')
     plotlongtermtrend ("coj", filter='rp', instrument='kb98')
