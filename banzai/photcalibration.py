@@ -420,12 +420,12 @@ class PS1IPP:
 
 #import longtermphotzp
 
-def crawlDirectory (site, camera, basedir='/nfs/archive/engineering',outputimageRootDir=None):
+def crawlDirectory (site, camera,args):
 
     photzpStage = PhotCalib()
 
-    imagedb = "/home/dharbeck/lcozpplots/%s-%s.db" % (site,camera)
-    search = "%s/%s/%s/*/processed/*-e91.fits.fz" % (basedir, site, camera)
+    imagedb = "%s/%s-%s.db" % (args.imagedbPrefix, site,camera)
+    search = "%s/%s/%s/*/processed/*-e91.fits.fz" % (args.rootdir, site, camera)
     inputlist = glob.glob(search)
 
     print("Found %d entries. Cleaning duplicate entries..." % len(inputlist))
@@ -433,16 +433,17 @@ def crawlDirectory (site, camera, basedir='/nfs/archive/engineering',outputimage
 
     for image in inputlist:
         image = image.rstrip()
-        photzpStage.analyzeImage(image, pickle=imagedb, outputimageRootDir=outputimageRootDir)
+        photzpStage.analyzeImage(image, pickle=imagedb, outputimageRootDir=args.outputimageRootDir)
 
 
-def crawlSite ( site, type, basedir='/nfs/archive/engineering', outputimageRootDir=None):
-    searchdir = "%s/%s/%s*" % (basedir, site, type)
+def crawlSite ( site, type, args):
+    """ Search for all cameras of a given type (fl, kb,fs) in a site directory and processed them """
+    searchdir = "%s/%s/%s*" % (args.rootdir, site, type)
 
     cameralist = glob.glob (searchdir)
     cameras = []
     for candidate in cameralist:
-        cameras.append ( (site, os.path.basename(os.path.normpath(candidate)), outputimageRootDir))
+        cameras.append ( (site, os.path.basename(os.path.normpath(candidate)), args.outputimageRootDir))
 
 
     for setup in cameras:
@@ -452,20 +453,25 @@ def crawlSite ( site, type, basedir='/nfs/archive/engineering', outputimageRootD
 
 
 def parseCommandLine ():
+    """ Read command line parameters
+    """
+
     parser = argparse.ArgumentParser(
         description='Determine photometric zeropoint of banzai-reduced LCO imaging data.')
     parser.add_argument("--diagnosticplotsdir", dest='outputimageRootDir', default=None,
-                    help='Output directory for diagnostic plots. No plots generated if option is omitted. ')
+                    help='Output directory for diagnostic photometry plots. No plots generated if option is omitted. ')
 
-    parser.add_argument('--imagedbPrefix', dest='imagedbPrefix', default='/home/dharbeck/lcozpplots', help = 'Result output directory')
-    parser.add_argument('--rootdir', dest='rootdir', default='/nfs/archive/engineering', help="data root directory")
+    parser.add_argument('--imagedbPrefix', dest='imagedbPrefix', default='/home/dharbeck/lcozpplots', help = 'Result output directory. .db file is written here')
+    parser.add_argument('--imagerootdir', dest='rootdir', default='/nfs/archive/engineering', help="LCO archive root directory")
     parser.add_argument('--site', dest='site', default='lsc', help='sites code for camera')
     parser.add_argument('--camera', dest='camera', default='fl03', help='camera to process')
 
 
     args = parser.parse_args()
-    print (args)
-    pass
+
+    return args
+
+
 
 import multiprocessing
 if __name__ == '__main__':
@@ -473,13 +479,12 @@ if __name__ == '__main__':
     global args
 
     args = parseCommandLine()
+    print (args)
 
     sites = ('lsc','cpt','ogg','coj','tfn')
     cameras = ("fl","fs","kb")
-
-
+    cameras = ("fl")
 
     for site in sites:
         for cameratype in cameras:
-            crawlSite(site, cameratype)
-
+            crawlSite(site, cameratype, args)
