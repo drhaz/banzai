@@ -9,11 +9,13 @@ import sys
 import calendar
 
 
-airmasscorrection = {'gp':0.2, 'rp': 0.12, 'ip': 0.08, 'zp': 0.05,}
+airmasscorrection = {'gp':0.17, 'rp': 0.11, 'ip': 0.08, 'zp': 0.05,}
+
+colorcorrection = { 'gp' : 0.071,  'rp' :  0.013, 'ip': 0.024, }
 
 def readDataFile (inputfile):
     return np.genfromtxt(inputfile, unpack=True, dtype=None,skip_footer=5, \
-                    converters={ 1: lambda x: dateutil.parser.parse(x)}, names = ['name','dateobs', 'site', 'dome', 'telescope', 'camera','filter','airmass','zp'])
+                    converters={ 1: lambda x: dateutil.parser.parse(x)}, names = ['name','dateobs', 'site', 'dome', 'telescope', 'camera','filter','airmass','zp', 'colorterm'])
 
 
 def findUpperEnvelope (dateobs, datum, range=1, ymax = 24.2):
@@ -45,8 +47,8 @@ def findUpperEnvelope (dateobs, datum, range=1, ymax = 24.2):
     day_x = []
     day_y = []
 
-    # define  day / night boundary for the site.
-    startdate =datetime.datetime(year=x[0].year, month = x[0].month, day=x[0].day, hour=20)
+    # TODO: define  day / night boundary for the site.
+    startdate =datetime.datetime(year=x[0].year, month = x[0].month, day=x[0].day, hour=12)
     enddate = x[len(x)-1]
     while startdate < enddate:
         todayzps = y [ (x > startdate ) & (x < startdate + datetime.timedelta(days=3)) & (y<ymax) & (y is not np.nan)]
@@ -97,11 +99,52 @@ def trendcorrectthroughput (datadate, datazp, modeldate, modelzp):
         interpolated = np.interp(calendar.timegm(datadate[ii].timetuple()), modelgmt, modelzp)
         corrected[ii] = datazp[ii] - interpolated
 
-    return corrected
+    # estimate if photometric
+
+
+    photomerticthres = 0.25
+    day_x = []
+    day_y = []
+    alldata = zip (datadate, corrected)
+    sorted_points = sorted (alldata)
+    x = np.asarray([point[0] for point in sorted_points])
+    y = np.asarray([point[1] for point in sorted_points])
+    startdate =datetime.datetime(year=2016, month = 4, day=1, hour=16)
+    enddate = x[len(x)-1]
+    print startdate, enddate
+    while startdate < enddate:
+        todayzps = y [ (x > startdate ) & (x < startdate + datetime.timedelta(days=1))]
+
+        photometric = -1
+
+        if len (todayzps) > 0: # require a minium amount of data for a night
+
+            if np.min (todayzps > -0.15):
+                photometric  = 1
+            else:
+                photometric = 0
+
+
+        day_x.append (startdate)
+        day_y.append (photometric)
+
+        startdate = startdate + datetime.timedelta(days=1)
+
+    day_x = np.asarray(day_x)
+    day_y = np.asarray(day_y)
+    unclassified = len(day_y[day_y < 0])
+    photometric =  len(day_y[day_y > 0])
+    nonphot     =  len(day_y[day_y == 0])
+    #
+
+    print ("out of %d days\nphotometric\t%d\nnon-photometric\t%d\nunknown\t%d" %
+           (unclassified+photometric+nonphot, photometric, nonphot, unclassified))
+
+    return corrected, day_x, day_y
 
 def plotallmirrormodels (basedirectory="/home/dharbeck/lcozpplots"):
     import glob
-    modellist = glob.glob ("%s/mirrormodel*gp.dat" % (basedirectory))
+    modellist = glob.glob ("%s/mirrormodel*rp.dat" % (basedirectory))
 
     for model in modellist:
         data = np.genfromtxt (model, dtype=None, names=("date", "time", "zp") )
@@ -113,16 +156,15 @@ def plotallmirrormodels (basedirectory="/home/dharbeck/lcozpplots"):
         #data['zp'] = np.power(10, data['zp']/2.5)
         #data['zp'] = data['zp'] / np.min(data['zp'])
 
-
         plt.gcf().autofmt_xdate()
         plt.plot (date, data['zp'], label=model[-11:-7])
-
 
         # ax = fig.gca()
         # ax.set_xticks(numpy.arange(0, 1, 0.1))
         # ax.set_yticks(numpy.arange(0, 1., 0.1))
-    plt.legend()
-
+    #plt.legend()
+    plt.ylabel("phot zeropoint rp")
+    plt.xlim ([datetime.datetime(2016,01,01),datetime.datetime (2017,10,01)])
     plt.grid(True, which='both')
     plt.savefig ("%s/allmodels.png" % basedirectory)
     plt.close()
@@ -142,15 +184,18 @@ def plotlongtermtrend (site, enclosure=None, telescope=None, instrument=None, fi
         selection = selection & (data['camera'] == instrument)
 
     selection = selection & np.logical_not (  np.isnan(data['zp']))
+    selection = selection & np.logical_not (  np.isnan(data['airmass']))
 
     zpselect = data['zp'][selection]
     dateselect = data['dateobs'][selection]
     airmasselect = data['airmass'][selection]
-
+    if (len (airmasselect) == 0):
+        print ("Zero viable elements left for %s %s" % (site, instrument))
+        return
     ymax = 24.2  # good starting point for 2m:spectral cameras
     if (instrument is not None):
         if instrument.startswith("fl"): # 1m sinistro
-            ymax = 23.75
+            ymax = 23.95
         if instrument.startswith("kb"): # 0.4m sbigs
             ymax = 22
 
@@ -159,27 +204,34 @@ def plotlongtermtrend (site, enclosure=None, telescope=None, instrument=None, fi
 
     # find the overall trend of zeropoint variations.
     _x, _y = findUpperEnvelope(dateselect, zp_air, ymax= ymax)
-    detrended = trendcorrectthroughput(dateselect, zp_air, _x, _y)
+    detrended, photdate, photflag  = trendcorrectthroughput(dateselect, zp_air, _x, _y)
+
 
     plt.figure()
     #plt.plot (dateselect, zpselect, ".", c="grey", label="no airmass correction")
-    plt.plot (dateselect,  zp_air, ".", c="blue", label="with airmass correction" )
+    plt.plot (dateselect,  zp_air, 'o', markersize=2, c="blue", label="with airmass correction" )
     plt.plot (_x, _y, "-", c='red', label='upper envelope')
 
-    plt.plot (dateselect, detrended+ymax - 1.5,  ".", c="cyan", label="detrended + 23mag")
+    #plt.plot (dateselect, detrended+ymax - 1.5,  ".", c="cyan", label="detrended + 23mag")
+
+    #plt.plot (photdate, photflag/10. + ymax - 1.5, ".", c='green', label = "photometric flag")
+
     plt.legend()
-    plt.xlim ([datetime.datetime(2016,01,01),datetime.datetime (2017,9,01)])
+    plt.xlim ([datetime.datetime(2016,01,01),datetime.datetime (2017,10,01)])
     plt.ylim([ymax - 2,ymax])
     plt.gcf().autofmt_xdate()
     plt.xlabel ("DATE-OBS")
-    plt.ylabel ("Photometric Zeropint %s" % (filter))
+    plt.ylabel ("Photometric Zeropoint %s" % (filter))
     plt.title ("Long term throughput  %s in %s" % (instrument,filter))
 
+
     if (instrument in ("kb97","kb98")):
-        plt.axvline(x=datetime.datetime(2017, 06,30), color='k', linestyle='--')
+        plt.axvline(x=datetime.datetime(2017, 6,30), color='k', linestyle='--')
+    if (instrument in ("fl03","xxx")):
+        plt.axvline(x=datetime.datetime(2017, 8,31), color='k', linestyle='--')
 
     outfigname = "%s/photzptrend-%s-%s.png" % (basedirectory,instrument, filter)
-    plt.savefig (outfigname)
+    plt.savefig (outfigname, dpi=600)
     plt.close()
 
     outdetrendfname = "%s/photdetrend-%s-%s.dat" % (basedirectory,instrument, filter)
@@ -199,32 +251,48 @@ def plotlongtermtrend (site, enclosure=None, telescope=None, instrument=None, fi
     plt.plot (airmasselect, zp_air, ".", c="blue")
 
     plt.xlabel ("Airmass")
-    plt.ylabel ("Photomertic Zeropint %s" % (filter))
+    plt.ylabel ("Photomertic Zeropoint %s" % (filter))
     plt.ylim([meanzp-0.5,meanzp+0.5])
 
     plt.savefig ("%s/airmasstrend-%s-%s.png"  % (basedirectory, instrument, filter))
     plt.close()
 
 
+    plt.figure()
+    selection = selection & np.logical_not (  np.isnan(data['colorterm']))
+    selection = selection &  (  np.abs(data['colorterm']) < 0.3)
+    colortermselect = data['colorterm'][selection]
+    dateselect = data['dateobs'][selection]
+    meancolorterm = np.median ( colortermselect )
+    plt.plot (dateselect,  colortermselect, 'o', markersize=2, c="blue", label="color term %s " % (filter) )
+    plt.axhline(y=meancolorterm, color='r', linestyle='-')
+    print ("Color term filter %s : % 5.3f" % (filter, meancolorterm))
+    plt.xlim ([datetime.datetime(2016,01,01),datetime.datetime (2017,10,01)])
+    plt.ylim([0,0.2])
+    
+    plt.savefig ("%s/colortermtrend-%s-%s.png"  % (basedirectory, instrument, filter))
+    plt.close()
+
+
+
 if __name__ == '__main__':
 
-    plotallmirrormodels()
+    plotlongtermtrend ("lsc", filter='gp', instrument='fl03')
+    plotlongtermtrend ("lsc", filter='rp', instrument='fl03')
+    plotlongtermtrend ("lsc", filter='ip', instrument='fl03')
+    plotlongtermtrend ("lsc", filter='zp', instrument='fl03')
+    #
+    #plotallmirrormodels()
     sys.exit(0)
-
     plotlongtermtrend ("ogg", filter='gp', instrument='fs02')
     plotlongtermtrend ("ogg", filter='rp', instrument='fs02')
     #
     plotlongtermtrend ("coj", filter='gp', instrument='fs01')
     plotlongtermtrend ("coj", filter='rp', instrument='fs01')
-
+    #
     plotlongtermtrend ("elp", filter='gp', instrument='fl05')
     plotlongtermtrend ("elp", filter='rp', instrument='fl05')
-
-  #  sys.exit(1)
 #
-#
-    plotlongtermtrend ("lsc", filter='gp', instrument='fl03')
-    plotlongtermtrend ("lsc", filter='rp', instrument='fl03')
 #
     plotlongtermtrend ("lsc", filter='gp', instrument='fl04')
     plotlongtermtrend ("lsc", filter='rp', instrument='fl04')
@@ -243,6 +311,7 @@ if __name__ == '__main__':
     plotlongtermtrend ("cpt", filter='gp', instrument='fl16')
     plotlongtermtrend ("cpt", filter='rp', instrument='fl16')
 
+
     plotlongtermtrend ("coj", filter='gp', instrument='kb97')
     plotlongtermtrend ("coj", filter='rp', instrument='kb97')
     #
@@ -259,4 +328,8 @@ if __name__ == '__main__':
     #
     plotlongtermtrend ("coj", filter='gp', instrument='kb98')
     plotlongtermtrend ("coj", filter='rp', instrument='kb98')
+    
+    plotallmirrormodels()
+    sys.exit(0)
+
 

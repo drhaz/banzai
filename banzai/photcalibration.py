@@ -18,7 +18,7 @@ import logging
 
 _logger = logging.getLogger(__name__)
 _logger.setLevel(logging.INFO)
-logging.basicConfig(format='%(asctime)-15s %(levelname)s\t %(message)s', level=logging.NOTSET)
+logging.basicConfig(format='%(asctime)-15s %(levelname)s\t %(message)s', level=logging.INFO)
 
 
 __author__ = 'dharbeck'
@@ -48,6 +48,7 @@ class PhotCalib():
         for i, image in enumerate(images):
             pass
             # logging_tags = logs.image_config_to_tags(image, self.group_by_keywords)
+
 
     def loadFitsCatalog(self, image):
         """ Load the banzai-generated photometry catalog from  'CAT' extension, queries PS1 catalog for image FoV, and
@@ -86,6 +87,7 @@ class PhotCalib():
         retCatalog['siteid'] = testimage['SCI'].header['SITEID']
         retCatalog['domid'] = testimage['SCI'].header['ENCLOSUR']
         retCatalog['telescope'] = testimage['SCI'].header['TELID']
+        retCatalog['agfocoff'] = testimage['SCI'].header['AGFOCOFF']
 
         # Check if filter is supported
         if retCatalog['instfilter'] not in self.ps1.FILTERMAPPING:
@@ -93,10 +95,18 @@ class PhotCalib():
             testimage.close()
             return None
 
+        # Check if exposure time is long enough
         if (retCatalog['exptime'] < 60):
             _logger.debug("Exposure %s time is deemed too short, ignoring" % (retCatalog['exptime']))
             testimage.close()
             return None
+
+        # verify there is no deliberate defocus
+        if (retCatalog['agfocoff'] is not None) and (retCatalog['agfocoff'] != 0):
+            _logger.debug ("Exposure is deliberately defocussed by %s, ignoring" %(retCatalog['agfocoff']))
+            testimage.close()
+            return None
+
 
         # Get the instrumental filter and the matching reference catalog filter names.
         referenceInformation = self.ps1.FILTERMAPPING[retCatalog['instfilter']]
@@ -107,6 +117,7 @@ class PhotCalib():
             instCatalog = testimage['CAT'].data
         except:
             _logger.error("No extension \'CAT\' available for image %s, skipping." % (image))
+            testimage.close()
             return None
 
         # Transform the image catalog to RA / Dec based on the WCS solution in the header.
@@ -116,10 +127,11 @@ class PhotCalib():
         try:
             ras, decs = image_wcs.all_pix2world(instCatalog['x'], instCatalog['y'], 1)
         except:
-            _logger.error("Failed to convert images ccordinates to world coordinates. Giving up on file.")
+            _logger.error("Failed to convert images coordinates to world coordinates. Giving up on file.")
+            testimage.close()
             return None
 
-        # Now we have all we waned from the input image, close it
+        # Now we have all we wanted from the input image, close it
         testimage.close()
 
         # Query reference catalog
@@ -160,12 +172,22 @@ class PhotCalib():
 
         return retCatalog
 
+
+    def reject_outliers(self, data, m=2):
+        """
+        Reject data from vector that are > m std deviations from median
+        :param m:
+        :return:
+        """
+        return data[abs(data - np.mean(data)) < m * np.std(data)]
+
     def analyzeImage(self, imageName, pickle="photzp.db", outputimageRootDir=None):
         """ Do full photometric zeropoint analysis on an image"""
 
         retCatalog = self.loadFitsCatalog(imageName)
 
-        if (retCatalog is None) or (retCatalog['instmag'] is None):
+        if (retCatalog is None) or (retCatalog['instmag'] is None) or (len(retCatalog['ra']) < 10):
+            _logger.debug ("Not enough stars to fit")
             return
 
         # calculate the per star zeropoint
@@ -176,9 +198,22 @@ class PhotCalib():
         dec = retCatalog['dec']
         refcol = retCatalog['refcol']
 
+
+
         # Calculate the photometric zeropoint.
         # TODO: Robust median w/ rejection, error propagation.
-        photzp = np.median(magZP)
+        photzp = np.median(self.reject_outliers(magZP, 3))
+
+        # calculate color term
+        cond =  (refcol>0) & (refcol < 3) & (np.abs (magZP-photzp) < 0.75)
+        colorparams = np.polyfit (refcol[cond], ( magZP-photzp)[cond], 1)
+        color_p  = np.poly1d (colorparams)
+        delta = np.abs( magZP-photzp - color_p(refcol) )
+        cond = (delta < 0.2)
+        colorparams = np.polyfit (refcol[cond], ( magZP-photzp)[cond], 1)
+        color_p  = np.poly1d (colorparams)
+
+        colorterm = colorparams[0]
 
         if (outputimageRootDir is not None) and (os.path.exists(outputimageRootDir)):
             outbasename = os.path.basename(imageName)
@@ -196,8 +231,11 @@ class PhotCalib():
 
             plt.figure()
             plt.plot(refcol, magZP - photzp, '.')
-            plt.xlim([-0.5, 3])
-            plt.ylim([-1, 1])
+
+            xp = np.linspace (-0.5,3.5,10)
+            plt.plot (xp,color_p(xp), '-')
+            #plt.xlim([-0.5, 3])
+            #plt.ylim([-1, 1])
             plt.xlabel("(g-r)_{SDSS} Reference")
             plt.ylabel("Reference Mag - Instrumnetal Mag - ZP (%5.2f) %s" % (photzp,retCatalog['instfilter']))
             plt.title("Color correction %s " % (outbasename))
@@ -216,10 +254,10 @@ class PhotCalib():
 
 
         with open(pickle, 'a') as f:
-            output = "%s %s %s %s %s %s %s %s % 6.3f \n" % (
+            output = "%s %s %s %s %s %s %s %s % 6.3f  % 6.3f\n" % (
                 imageName, retCatalog['dateobs'], retCatalog['siteid'], retCatalog['domid'],
                 retCatalog['telescope'], retCatalog['instrument'], retCatalog['instfilter'],
-                retCatalog['airmass'], photzp)
+                retCatalog['airmass'], photzp, colorterm)
             _logger.info(output)
             f.write(output)
             f.close()
@@ -443,13 +481,12 @@ def crawlSite ( site, type, args):
     cameralist = glob.glob (searchdir)
     cameras = []
     for candidate in cameralist:
-        cameras.append ( (site, os.path.basename(os.path.normpath(candidate)), args.outputimageRootDir))
+        cameras.append ( (site, os.path.basename(os.path.normpath(candidate))))
 
 
     for setup in cameras:
-        print ( setup[0],setup[1],setup[2])
-        #crawlDirectory(setup[0],setup[1],setup[2])
-
+        print ( setup[0],setup[1])
+        crawlDirectory(setup[0],setup[1],args)
 
 
 def parseCommandLine ():
@@ -466,24 +503,25 @@ def parseCommandLine ():
     parser.add_argument('--site', dest='site', default='lsc', help='sites code for camera')
     parser.add_argument('--camera', dest='camera', default='fl03', help='camera to process')
 
-
     args = parser.parse_args()
 
     return args
 
-
-
-import multiprocessing
+import sys
 if __name__ == '__main__':
-   # crawlDirectory('elp','fl05')
+
     global args
 
     args = parseCommandLine()
     print (args)
 
-    sites = ('lsc','cpt','ogg','coj','tfn')
+    #crawlDirectory('lsc','fl03', args)
+    #sys.exit (0)
+
+
+    sites = ('lsc','cpt','ogg','coj','tfn', 'elp')
     cameras = ("fl","fs","kb")
-    cameras = ("fl")
+    #cameras = ("fs", "kb")
 
     for site in sites:
         for cameratype in cameras:
