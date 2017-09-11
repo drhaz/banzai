@@ -31,6 +31,14 @@ class PhotCalib():
     # default and see where it goes.
     ps1 = None
 
+    # rough color corretion terms by camera class
+    colorcorrection = { 'fl' :
+                            {'gp' : 0.071,
+                             'rp' :  0.013,
+                             'ip': 0.024,
+                             'zp' : 0.0, }
+                        }
+
     def __init__(self):
         # super(PhotCalib, self).__init__(pipeline_context)
         self.ps1 = PS1IPP("/home/dharbeck/Catalogs/ps1odi/panstarrs/")
@@ -48,7 +56,6 @@ class PhotCalib():
         for i, image in enumerate(images):
             pass
             # logging_tags = logs.image_config_to_tags(image, self.group_by_keywords)
-
 
     def loadFitsCatalog(self, image):
         """ Load the banzai-generated photometry catalog from  'CAT' extension, queries PS1 catalog for image FoV, and
@@ -106,7 +113,6 @@ class PhotCalib():
             _logger.debug ("Exposure is deliberately defocussed by %s, ignoring" %(retCatalog['agfocoff']))
             testimage.close()
             return None
-
 
         # Get the instrumental filter and the matching reference catalog filter names.
         referenceInformation = self.ps1.FILTERMAPPING[retCatalog['instfilter']]
@@ -172,7 +178,6 @@ class PhotCalib():
 
         return retCatalog
 
-
     def reject_outliers(self, data, m=2):
         """
         Reject data from vector that are > m std deviations from median
@@ -190,18 +195,15 @@ class PhotCalib():
             _logger.debug ("Not enough stars to fit")
             return
 
-        # calculate the per star zeropoint
+        # some short cutes to data arrays
         magZP = retCatalog['refmag'] - retCatalog['instmag']
-
         refmag = retCatalog['refmag']
         ra = retCatalog['ra']
         dec = retCatalog['dec']
         refcol = retCatalog['refcol']
 
+        # Calculate the photometric zeropoint w/ outlier rejection.
 
-
-        # Calculate the photometric zeropoint.
-        # TODO: Robust median w/ rejection, error propagation.
         photzp = np.median(self.reject_outliers(magZP, 3))
 
         # calculate color term
@@ -313,7 +315,7 @@ class PS1IPP:
 
         return table
 
-    def get_reference_catalog(self, ra, dec, radius, overwrite_select=False):
+    def get_reference_catalog(self, ra, dec, radius):
         """ Read i fits table from local catalog copy. Concatenate tables columns
            from different fits tables for full coverage.
         """
@@ -502,6 +504,8 @@ def parseCommandLine ():
     parser.add_argument('--imagerootdir', dest='rootdir', default='/nfs/archive/engineering', help="LCO archive root directory")
     parser.add_argument('--site', dest='site', default='lsc', help='sites code for camera')
     parser.add_argument('--camera', dest='camera', default='fl03', help='camera to process')
+    parser.add_argument('--colorcorrect', dest='colorcorrect',
+                        action='store_false',   help='color correct photometry')
 
     args = parser.parse_args()
 

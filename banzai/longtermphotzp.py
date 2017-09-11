@@ -11,7 +11,7 @@ import calendar
 
 airmasscorrection = {'gp':0.17, 'rp': 0.11, 'ip': 0.08, 'zp': 0.05,}
 
-colorcorrection = { 'gp' : 0.071,  'rp' :  0.013, 'ip': 0.024, }
+
 
 def readDataFile (inputfile):
     return np.genfromtxt(inputfile, unpack=True, dtype=None,skip_footer=5, \
