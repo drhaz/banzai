@@ -550,8 +550,14 @@ if __name__ == '__main__':
 
     elif args.camera is not None:
 
-        print ("Calibrating camera ", args.camera, " at site ", args.site, ' for date ', args.date)
-        crawlDirectory(args.site,args.camera,args, date = args.date)
+
+        if args.site is None:
+            sites = '*'
+        else:
+            sites = args.site
+
+        print ("Calibrating camera ", args.camera, " at site ", sites, ' for date ', args.date)
+        crawlDirectory(sites,args.camera,args, date = args.date)
 
 
     else:
