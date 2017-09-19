@@ -1,5 +1,4 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
-
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -13,12 +12,10 @@ import re
 import glob
 import os
 import math
-
+import sys
 import logging
 
 _logger = logging.getLogger(__name__)
-_logger.setLevel(logging.INFO)
-logging.basicConfig(format='%(asctime)-15s %(levelname)s\t %(message)s', level=logging.INFO)
 
 
 __author__ = 'dharbeck'
@@ -74,6 +71,12 @@ class PhotCalib():
         # Boilerplate grab of status infomration
         ra = testimage['SCI'].header['CRVAL1']
         dec = testimage['SCI'].header['CRVAL2']
+
+        if dec < -30:
+            _logger.debug("Image not in PS1 footprint. Ignoring")
+            testimage.close()
+            return None
+
         retCatalog['exptime'] = testimage['SCI'].header['EXPTIME']
 
         # Safeguard against a division by zero downstream.
@@ -87,11 +90,11 @@ class PhotCalib():
         retCatalog['siteid'] = testimage['SCI'].header['SITEID']
         retCatalog['domid'] = testimage['SCI'].header['ENCLOSUR']
         retCatalog['telescope'] = testimage['SCI'].header['TELID']
-        retCatalog['agfocoff'] = testimage['SCI'].header['AGFOCOFF']
+        retCatalog['FOCOBOFF'] = testimage['SCI'].header['FOCOBOFF']
 
         # Check if filter is supported
         if retCatalog['instfilter'] not in self.ps1.FILTERMAPPING:
-            _logger.debug("Filter not viable for photometric calibration. Sorry")
+            _logger.debug("Filter %s not viable for photometric calibration. Sorry" % (retCatalog['instfilter']))
             testimage.close()
             return None
 
@@ -102,10 +105,12 @@ class PhotCalib():
             return None
 
         # verify there is no deliberate defocus
-        if (retCatalog['agfocoff'] is not None) and (retCatalog['agfocoff'] != 0):
-            _logger.debug ("Exposure is deliberately defocussed by %s, ignoring" %(retCatalog['agfocoff']))
+        if (retCatalog['FOCOBOFF'] is not None) and (retCatalog['FOCOBOFF'] != 0):
+            _logger.debug ("Exposure is deliberately defocussed by %s, ignoring" %(retCatalog['FOCOBOFF']))
             testimage.close()
             return None
+
+
 
 
         # Get the instrumental filter and the matching reference catalog filter names.
@@ -187,7 +192,7 @@ class PhotCalib():
         retCatalog = self.loadFitsCatalog(imageName)
 
         if (retCatalog is None) or (retCatalog['instmag'] is None) or (len(retCatalog['ra']) < 10):
-            _logger.debug ("Not enough stars to fit")
+            _logger.debug ("Not enough stars to fit %s" % (imageName, ))
             return
 
         # calculate the per star zeropoint
@@ -198,22 +203,26 @@ class PhotCalib():
         dec = retCatalog['dec']
         refcol = retCatalog['refcol']
 
-
-
         # Calculate the photometric zeropoint.
         # TODO: Robust median w/ rejection, error propagation.
         photzp = np.median(self.reject_outliers(magZP, 3))
 
         # calculate color term
-        cond =  (refcol>0) & (refcol < 3) & (np.abs (magZP-photzp) < 0.75)
-        colorparams = np.polyfit (refcol[cond], ( magZP-photzp)[cond], 1)
-        color_p  = np.poly1d (colorparams)
-        delta = np.abs( magZP-photzp - color_p(refcol) )
-        cond = (delta < 0.2)
-        colorparams = np.polyfit (refcol[cond], ( magZP-photzp)[cond], 1)
-        color_p  = np.poly1d (colorparams)
 
-        colorterm = colorparams[0]
+        try:
+            cond =  (refcol>0) & (refcol < 3) & (np.abs (magZP-photzp) < 0.75)
+            colorparams = np.polyfit (refcol[cond], ( magZP-photzp)[cond], 1)
+            color_p  = np.poly1d (colorparams)
+            delta = np.abs( magZP-photzp - color_p(refcol) )
+            cond = (delta < 0.2)
+            colorparams = np.polyfit (refcol[cond], ( magZP-photzp)[cond], 1)
+            color_p  = np.poly1d (colorparams)
+            colorterm = colorparams[0]
+
+        except:
+            _logger.warn ("could not fit a color term. ")
+            color_p = None
+            colorterm = 0
 
         if (outputimageRootDir is not None) and (os.path.exists(outputimageRootDir)):
             outbasename = os.path.basename(imageName)
@@ -231,9 +240,9 @@ class PhotCalib():
 
             plt.figure()
             plt.plot(refcol, magZP - photzp, '.')
-
-            xp = np.linspace (-0.5,3.5,10)
-            plt.plot (xp,color_p(xp), '-')
+            if color_p is not None:
+                xp = np.linspace (-0.5,3.5,10)
+                plt.plot (xp,color_p(xp), '-')
             #plt.xlim([-0.5, 3])
             #plt.ylim([-1, 1])
             plt.xlabel("(g-r)_{SDSS} Reference")
@@ -252,7 +261,6 @@ class PhotCalib():
             plt.savefig("%s/%s_%s_zpmap.png" % (outputimageRootDir, outbasename,retCatalog['instfilter']))
             plt.close()
 
-
         with open(pickle, 'a') as f:
             output = "%s %s %s %s %s %s %s %s % 6.3f  % 6.3f\n" % (
                 imageName, retCatalog['dateobs'], retCatalog['siteid'], retCatalog['domid'],
@@ -263,7 +271,6 @@ class PhotCalib():
             f.close()
 
         return photzp
-
 
 
 
@@ -458,16 +465,24 @@ class PS1IPP:
 
 #import longtermphotzp
 
-def crawlDirectory (site, camera,args):
+def crawlDirectory (site, camera,args, date=None):
 
     photzpStage = PhotCalib()
+    if date is None:
+        date = '*'
+
+    if site is None:
+        site = '*'
 
     imagedb = "%s/%s-%s.db" % (args.imagedbPrefix, site,camera)
-    search = "%s/%s/%s/*/processed/*-e91.fits.fz" % (args.rootdir, site, camera)
+    search = "%s/%s/%s/%s/processed/*-[es]91.fits.fz" % (args.rootdir, site, camera, date)
+    _logger.info ("File search string is: %s" %(search))
+
     inputlist = glob.glob(search)
 
-    print("Found %d entries. Cleaning duplicate entries..." % len(inputlist))
-    print("Starting analysis")
+    _logger.debug("Found %d entries. Cleaning duplicate entries..." % len(inputlist))
+    # TODO: Do not lie, and actually do clean for duplicate entries!
+    _logger.debug("Starting analysis")
 
     for image in inputlist:
         image = image.rstrip()
@@ -483,10 +498,9 @@ def crawlSite ( site, type, args):
     for candidate in cameralist:
         cameras.append ( (site, os.path.basename(os.path.normpath(candidate))))
 
-
     for setup in cameras:
         print ( setup[0],setup[1])
-        crawlDirectory(setup[0],setup[1],args)
+        crawlDirectory(setup[0],setup[1],args, args.date)
 
 
 def parseCommandLine ():
@@ -495,34 +509,52 @@ def parseCommandLine ():
 
     parser = argparse.ArgumentParser(
         description='Determine photometric zeropoint of banzai-reduced LCO imaging data.')
+
+    parser.add_argument('--log_level', dest='log_level', default='INFO', choices=['DEBUG', 'INFO'],
+                        help='Set the debug level')
+
     parser.add_argument("--diagnosticplotsdir", dest='outputimageRootDir', default=None,
                     help='Output directory for diagnostic photometry plots. No plots generated if option is omitted. ')
 
     parser.add_argument('--imagedbPrefix', dest='imagedbPrefix', default='/home/dharbeck/lcozpplots', help = 'Result output directory. .db file is written here')
     parser.add_argument('--imagerootdir', dest='rootdir', default='/nfs/archive/engineering', help="LCO archive root directory")
-    parser.add_argument('--site', dest='site', default='lsc', help='sites code for camera')
-    parser.add_argument('--camera', dest='camera', default='fl03', help='camera to process')
+    parser.add_argument('--site', dest='site', default=None, help='sites code for camera')
+
+    parser.add_argument('--date', dest='date', default=None, help='Specific date to process.')
+
+    cameragroup = parser.add_mutually_exclusive_group()
+    cameragroup.add_argument('--camera', dest='camera', default=None, help='specific camera to process. ')
+    cameragroup.add_argument('--cameratype', dest='cameratype', default=None, choices=['fs','fl','kb'], help='camera type to process at selected sites to process. ')
 
     args = parser.parse_args()
-
+    logging.basicConfig(level=getattr(logging, args.log_level.upper()),
+                    format='%(asctime)s.%(msecs).03d %(levelname)7s: %(module)20s: %(message)s')
     return args
 
-import sys
 if __name__ == '__main__':
 
-    global args
-
     args = parseCommandLine()
-    print (args)
 
-    #crawlDirectory('lsc','fl03', args)
-    #sys.exit (0)
+    if args.cameratype is not None:
+
+        cameras = [camera for camera in args.cameratype.split(',')]
+        if args.site is not None:
+            sites = [site for site in args.site.split(',')]
+        else:
+            sites = ('lsc','cpt','ogg','coj','tfn', 'elp')
+
+        print ("Crawling through camera types ", cameras, " at sites " , sites, " for date ", args.date)
+        for site in sites:
+            for cameratype in cameras:
+                crawlSite(site, cameratype, args)
+
+    elif args.camera is not None:
+
+        print ("Calibrating camera ", args.camera, " at site ", args.site, ' for date ', args.date)
+        crawlDirectory(args.site,args.camera,args, date = args.date)
 
 
-    sites = ('lsc','cpt','ogg','coj','tfn', 'elp')
-    cameras = ("fl","fs","kb")
-    #cameras = ("fs", "kb")
+    else:
+        print ("Need to specify either a camera, or a camera type.")
+    sys.exit (0)
 
-    for site in sites:
-        for cameratype in cameras:
-            crawlSite(site, cameratype, args)
