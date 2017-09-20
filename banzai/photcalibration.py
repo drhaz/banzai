@@ -1,5 +1,6 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 import matplotlib
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from astropy.io import fits
@@ -17,7 +18,6 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
-
 __author__ = 'dharbeck'
 
 
@@ -30,7 +30,7 @@ class PhotCalib():
 
     def __init__(self, ps1dir):
         # super(PhotCalib, self).__init__(pipeline_context)
-        # TODO: capture error if no ps1 catalog is fuond at location
+        # TODO: capture error if no ps1 catalog is found at location
         self.ps1 = PS1IPP(ps1dir)
 
     def isInCatalogFootprint(self, ra, dec):
@@ -49,7 +49,6 @@ class PhotCalib():
         for i, image in enumerate(images):
             pass
             # logging_tags = logs.image_config_to_tags(image, self.group_by_keywords)
-
 
     def loadFitsCatalog(self, image):
         """ Load the banzai-generated photometry catalog from  'CAT' extension, queries PS1 catalog for image FoV, and
@@ -111,10 +110,9 @@ class PhotCalib():
 
         # verify there is no deliberate defocus
         if (retCatalog['FOCOBOFF'] is not None) and (retCatalog['FOCOBOFF'] != 0):
-            _logger.debug ("Exposure is deliberately defocussed by %s, ignoring" %(retCatalog['FOCOBOFF']))
+            _logger.debug("Exposure is deliberately defocussed by %s, ignoring" % (retCatalog['FOCOBOFF']))
             testimage.close()
             return None
-
 
         # Get the instrumental filter and the matching reference catalog filter names.
         referenceInformation = self.ps1.FILTERMAPPING[retCatalog['instfilter']]
@@ -180,7 +178,6 @@ class PhotCalib():
 
         return retCatalog
 
-
     def reject_outliers(self, data, m=2):
         """
         Reject data from vector that are > m std deviations from median
@@ -190,12 +187,15 @@ class PhotCalib():
         return data[abs(data - np.mean(data)) < m * np.std(data)]
 
     def analyzeImage(self, imageName, pickle="photzp.db", outputimageRootDir=None):
-        """ Do full photometric zeropoint analysis on an image"""
+        """ Do full photometric zeropoint analysis on an image
+         """
+
+        # TODO: Make this procedure thread safe so it can be accelerated a bit.
 
         retCatalog = self.loadFitsCatalog(imageName)
 
         if (retCatalog is None) or (retCatalog['instmag'] is None) or (len(retCatalog['ra']) < 10):
-            _logger.debug ("Not enough stars to fit %s" % (imageName, ))
+            _logger.debug("Not enough stars to fit %s" % (imageName,))
             return
 
         # calculate the per star zeropoint
@@ -213,23 +213,24 @@ class PhotCalib():
         # calculate color term
 
         try:
-            cond =  (refcol>0) & (refcol < 3) & (np.abs (magZP-photzp) < 0.75)
-            colorparams = np.polyfit (refcol[cond], ( magZP-photzp)[cond], 1)
-            color_p  = np.poly1d (colorparams)
-            delta = np.abs( magZP-photzp - color_p(refcol) )
+            cond = (refcol > 0) & (refcol < 3) & (np.abs(magZP - photzp) < 0.75)
+            colorparams = np.polyfit(refcol[cond], (magZP - photzp)[cond], 1)
+            color_p = np.poly1d(colorparams)
+            delta = np.abs(magZP - photzp - color_p(refcol))
             cond = (delta < 0.2)
-            colorparams = np.polyfit (refcol[cond], ( magZP-photzp)[cond], 1)
-            color_p  = np.poly1d (colorparams)
+            colorparams = np.polyfit(refcol[cond], (magZP - photzp)[cond], 1)
+            color_p = np.poly1d(colorparams)
             colorterm = colorparams[0]
 
         except:
-            _logger.warn ("could not fit a color term. ")
+            _logger.warn("could not fit a color term. ")
             color_p = None
             colorterm = 0
 
         if (outputimageRootDir is not None) and (os.path.exists(outputimageRootDir)):
             outbasename = os.path.basename(imageName)
             outbasename = re.sub('.fits.fz', '', outbasename)
+
             plt.figure()
             plt.plot(refmag, magZP, '.')
             plt.xlim([10, 22])
@@ -238,32 +239,34 @@ class PhotCalib():
             plt.xlabel("Reference catalog mag")
             plt.ylabel("Reference Mag - Instrumnetal Mag (%s)" % (retCatalog['instfilter']))
             plt.title("Photometric zeropoint %s %5.2f" % (outbasename, photzp))
-            plt.savefig("%s/%s_%s_zp.png" % (outputimageRootDir,outbasename,retCatalog['instfilter']))
+            plt.savefig("%s/%s_%s_zp.png" % (outputimageRootDir, outbasename, retCatalog['instfilter']))
             plt.close()
 
             plt.figure()
             plt.plot(refcol, magZP - photzp, '.')
             if color_p is not None:
-                xp = np.linspace (-0.5,3.5,10)
-                plt.plot (xp,color_p(xp), '-')
-            #plt.xlim([-0.5, 3])
-            #plt.ylim([-1, 1])
+                xp = np.linspace(-0.5, 3.5, 10)
+                plt.plot(xp, color_p(xp), '-', label="color term fit % 6.4f" % (colorterm))
+                plt.legend()
+            # plt.xlim([-0.5, 3])
+            # plt.ylim([-1, 1])
             plt.xlabel("(g-r)_{SDSS} Reference")
-            plt.ylabel("Reference Mag - Instrumnetal Mag - ZP (%5.2f) %s" % (photzp,retCatalog['instfilter']))
+            plt.ylabel("Reference Mag - Instrumnetal Mag - ZP (%5.2f) %s" % (photzp, retCatalog['instfilter']))
             plt.title("Color correction %s " % (outbasename))
-            plt.savefig("%s/%s_%s_color.png" % (outputimageRootDir,outbasename,retCatalog['instfilter']))
+            plt.savefig("%s/%s_%s_color.png" % (outputimageRootDir, outbasename, retCatalog['instfilter']))
             plt.close()
 
-            plt.figure()
-            plt.scatter(ra, dec, c=magZP - photzp, vmin=-0.2, vmax=0.2, edgecolor='none',
-                        s=9, cmap=matplotlib.pyplot.cm.get_cmap('nipy_spectral'))
-            plt.colorbar()
-            plt.title("Spacial variation of phot. Zeropoint %s %s" % (outbasename,retCatalog['instfilter']))
-            plt.xlabel("RA")
-            plt.ylabel("Dec")
-            plt.savefig("%s/%s_%s_zpmap.png" % (outputimageRootDir, outbasename,retCatalog['instfilter']))
-            plt.close()
+            # plt.figure()
+            # plt.scatter(ra, dec, c=magZP - photzp, vmin=-0.2, vmax=0.2, edgecolor='none',
+            #             s=9, cmap=matplotlib.pyplot.cm.get_cmap('nipy_spectral'))
+            # plt.colorbar()
+            # plt.title("Spacial variation of phot. Zeropoint %s %s" % (outbasename,retCatalog['instfilter']))
+            # plt.xlabel("RA")
+            # plt.ylabel("Dec")
+            # plt.savefig("%s/%s_%s_zpmap.png" % (outputimageRootDir, outbasename,retCatalog['instfilter']))
+            # plt.close()
 
+        # TODO: Make this thread safe, e.g., write to transactional database, or return values for storing externally.
         with open(pickle, 'a') as f:
             output = "%s %s %s %s %s %s %s %s % 6.3f  % 6.3f\n" % (
                 imageName, retCatalog['dateobs'], retCatalog['siteid'], retCatalog['domid'],
@@ -274,7 +277,6 @@ class PhotCalib():
             f.close()
 
         return photzp
-
 
 
 class PS1IPP:
@@ -299,10 +301,10 @@ class PS1IPP:
     ## shown in paper. Reverse after the fact to avoid confusion when looking at paper
 
     ps1colorterms = {}
-    ps1colorterms['g'] = [-0.01808, -0.13595, 0.01941, -0.00183][::-1]
-    ps1colorterms['r'] = [-0.01836, -0.03577, 0.02612, -0.00558][::-1]
-    ps1colorterms['i'] = [0.01170, -0.00400, 0.00066, -0.00058][::-1]
-    ps1colorterms['z'] = [-0.01062, 0.07529, -0.03592, 0.00890][::-1]
+    ps1colorterms['g'] = [-0.01808, -0.13595, +0.01941, -0.00183][::-1]
+    ps1colorterms['r'] = [-0.01836, -0.03577, +0.02612, -0.00558][::-1]
+    ps1colorterms['i'] = [+0.01170, -0.00400, +0.00066, -0.00058][::-1]
+    ps1colorterms['z'] = [-0.01062, +0.07529, -0.03592, +0.00890][::-1]
 
     def __init__(self, basedir):
         self.basedir = basedir
@@ -328,19 +330,19 @@ class PS1IPP:
            from different fits tables for full coverage.
         """
 
-        # TODO: integrate into logging schema
-        logger = logging
+
+
 
         # A lot of safeguarding boiler plate to ensure catalog files are valid.
         if (self.basedir is None) or (not os.path.isdir(self.basedir)):
-            logger.warning("Unable to find reference catalog: %s" % (str(self.basedir)))
+            _logger.error("Unable to find reference catalog: %s" % (str(self.basedir)))
             return None
 
         # Load the SkyTable so we know in what files to look for the catalog"
-        logger.debug("Using catalog found in %s" % (self.basedir))
+        _logger.debug("Using catalog found in %s" % (self.basedir))
         skytable_filename = "%s/SkyTable.fits" % (self.basedir)
         if (not os.path.isfile(skytable_filename)):
-            logger.error("Unable to find catalog index file in %s!" % (self.basedir))
+            _logger.error("Unable to find catalog index file in %s!" % (self.basedir))
             return None
 
         # Read in the master index hdu
@@ -360,7 +362,7 @@ class PS1IPP:
             min_dec, max_dec = dec[0], dec[1]
             min_ra, max_ra = ra[0], ra[1]
 
-        logger.debug("Querying catalog: Ra=%f...%f Dec=%f...%f" % (min_ra, max_ra, min_dec, max_dec))
+        _logger.debug("Querying catalog: Ra=%f...%f Dec=%f...%f" % (min_ra, max_ra, min_dec, max_dec))
 
         if (max_ra > 360.):
             # This wraps around the high end, shift all ra values by -180
@@ -374,7 +376,7 @@ class PS1IPP:
             skytable['R_MAX'][selected] -= 360
             skytable['R_MIN'][selected] -= 360
 
-        logger.debug("# Search radius: RA=%.1f ... %.1f   DEC=%.1f ... %.1f" % (min_ra, max_ra, min_dec, max_dec))
+        _logger.debug("# Search radius: RA=%.1f ... %.1f   DEC=%.1f ... %.1f" % (min_ra, max_ra, min_dec, max_dec))
 
         try:
             needed_catalogs = (skytable['PARENT'] > 0) & (skytable['PARENT'] < 25) & \
@@ -389,7 +391,7 @@ class PS1IPP:
 
         files_to_read = skytable['NAME'][needed_catalogs]
         files_to_read = [f.strip() for f in files_to_read]
-        logger.debug(files_to_read)
+        _logger.debug(files_to_read)
 
         skytable_hdu.close()  # Warning: might erase the loaded data, might need to copy array!
 
@@ -415,18 +417,18 @@ class PS1IPP:
                     catalogfile += ".fits"
                 else:
                     # neither option (w/ or w/o .fits added is a file)
-                    logger.warning(
+                    _logger.warning(
                         "Catalog file (%s) not found (base-dir: %s)" % (os.path.abspath(catalogfile), self.basedir))
                     continue
 
             try:
                 hdu_cat = fits.open(catalogfile)
             except:
-                logger.warning("Unable to open catalog file %s" % (catalogfile))
+                _logger.warning("Unable to open catalog file %s" % (catalogfile))
                 continue
 
             catalog_filenames.append(catalogfile)
-            logger.debug("Adding %s to list of catalog files being used" % (catalogfile))
+            _logger.debug("Adding %s to list of catalog files being used" % (catalogfile))
 
             # read table into a nd-array buffer
             cat_full = hdu_cat[1].data
@@ -447,7 +449,7 @@ class PS1IPP:
                 cat_dec < max_dec)
 
             array_to_add = cat_full[select_from_cat]
-            logger.debug("Read %d sources from %s" % (array_to_add.shape[0], catalogname))
+            _logger.debug("Read %d sources from %s" % (array_to_add.shape[0], catalogname))
 
             if (full_catalog is None):
                 full_catalog = array_to_add
@@ -456,30 +458,30 @@ class PS1IPP:
                 # print photom_grizy[:3,:]
 
             if (full_catalog is None):
-                logger.warning("No stars found in area %s, %s from catalog %s" % (
+                _logger.warning("No stars found in area %s, %s from catalog %s" % (
                     str(ra), str(dec),
                     # ra[0], ra[1], dec[0], dec[1],
                     self.basedir))
             else:
-                logger.debug("Read a total of %d stars from %d catalogs!" % (full_catalog.shape[0], len(files_to_read)))
+                _logger.debug("Read a total of %d stars from %d catalogs!" % (full_catalog.shape[0], len(files_to_read)))
 
         self.PS1toSDSS(full_catalog)
         return full_catalog
 
-#import longtermphotzp
 
-def crawlDirectory (site, camera,args, date=None):
+def crawlDirectory(site, camera, args, date=None):
 
     photzpStage = PhotCalib(args.ps1dir)
+
     if date is None:
         date = '*'
 
     if site is None:
         site = '*'
 
-    imagedb = "%s/%s-%s.db" % (args.imagedbPrefix, site,camera)
+    imagedb = "%s/%s-%s.db" % (args.imagedbPrefix, site, camera)
     search = "%s/%s/%s/%s/processed/*-[es]91.fits.fz" % (args.rootdir, site, camera, date)
-    _logger.info ("File search string is: %s" %(search))
+    _logger.info("File search string is: %s" % (search))
 
     inputlist = glob.glob(search)
 
@@ -492,21 +494,21 @@ def crawlDirectory (site, camera,args, date=None):
         photzpStage.analyzeImage(image, pickle=imagedb, outputimageRootDir=args.outputimageRootDir)
 
 
-def crawlSite ( site, type, args):
+def crawlSite(site, type, args):
     """ Search for all cameras of a given type (fl, kb,fs) in a site directory and processed them """
     searchdir = "%s/%s/%s*" % (args.rootdir, site, type)
 
-    cameralist = glob.glob (searchdir)
+    cameralist = glob.glob(searchdir)
     cameras = []
     for candidate in cameralist:
-        cameras.append ( (site, os.path.basename(os.path.normpath(candidate))))
+        cameras.append((site, os.path.basename(os.path.normpath(candidate))))
 
     for setup in cameras:
-        print ( setup[0],setup[1])
-        crawlDirectory(setup[0],setup[1],args, args.date)
+        print(setup[0], setup[1])
+        crawlDirectory(setup[0], setup[1], args, args.date)
 
 
-def parseCommandLine ():
+def parseCommandLine():
     """ Read command line parameters
     """
 
@@ -516,25 +518,30 @@ def parseCommandLine ():
     parser.add_argument('--log_level', dest='log_level', default='INFO', choices=['DEBUG', 'INFO'],
                         help='Set the debug level')
 
-    parser.add_argument ('--ps1dir', dest = 'ps1dir', default='/home/dharbeck/Catalogs/ps1odi/panstarrs/', help='Directory of PS1 catalog')
+    parser.add_argument('--ps1dir', dest='ps1dir', default='/home/dharbeck/Catalogs/ps1odi/panstarrs/',
+                        help='Directory of PS1 catalog')
 
     parser.add_argument("--diagnosticplotsdir", dest='outputimageRootDir', default=None,
-                    help='Output directory for diagnostic photometry plots. No plots generated if option is omitted. ')
+                        help='Output directory for diagnostic photometry plots. No plots generated if option is omitted. ')
 
-    parser.add_argument('--imagedbPrefix', dest='imagedbPrefix', default='/home/dharbeck/lcozpplots', help = 'Result output directory. .db file is written here')
-    parser.add_argument('--imagerootdir', dest='rootdir', default='/nfs/archive/engineering', help="LCO archive root directory")
+    parser.add_argument('--imagedbPrefix', dest='imagedbPrefix', default='/home/dharbeck/lcozpplots',
+                        help='Result output directory. .db file is written here')
+    parser.add_argument('--imagerootdir', dest='rootdir', default='/nfs/archive/engineering',
+                        help="LCO archive root directory")
     parser.add_argument('--site', dest='site', default=None, help='sites code for camera')
 
     parser.add_argument('--date', dest='date', default=None, help='Specific date to process.')
 
     cameragroup = parser.add_mutually_exclusive_group()
     cameragroup.add_argument('--camera', dest='camera', default=None, help='specific camera to process. ')
-    cameragroup.add_argument('--cameratype', dest='cameratype', default=None, choices=['fs','fl','kb'], help='camera type to process at selected sites to process. ')
+    cameragroup.add_argument('--cameratype', dest='cameratype', default=None, choices=['fs', 'fl', 'kb'],
+                             help='camera type to process at selected sites to process. ')
 
     args = parser.parse_args()
     logging.basicConfig(level=getattr(logging, args.log_level.upper()),
-                    format='%(asctime)s.%(msecs).03d %(levelname)7s: %(module)20s: %(message)s')
+                        format='%(asctime)s.%(msecs).03d %(levelname)7s: %(module)20s: %(message)s')
     return args
+
 
 if __name__ == '__main__':
 
@@ -543,29 +550,28 @@ if __name__ == '__main__':
     if args.cameratype is not None:
 
         cameras = [camera for camera in args.cameratype.split(',')]
+
         if args.site is not None:
             sites = [site for site in args.site.split(',')]
         else:
-            sites = ('lsc','cpt','ogg','coj','tfn', 'elp')
+            sites = ('lsc', 'cpt', 'ogg', 'coj', 'tfn', 'elp')
 
-        print ("Crawling through camera types ", cameras, " at sites " , sites, " for date ", args.date)
+        print("Crawling through camera types ", cameras, " at sites ", sites, " for date ", args.date)
         for site in sites:
             for cameratype in cameras:
                 crawlSite(site, cameratype, args)
 
     elif args.camera is not None:
 
-
         if args.site is None:
             sites = '*'
         else:
             sites = args.site
 
-        print ("Calibrating camera ", args.camera, " at site ", sites, ' for date ', args.date)
-        crawlDirectory(sites,args.camera,args, date = args.date)
+        print("Calibrating camera ", args.camera, " at site ", sites, ' for date ', args.date)
+        crawlDirectory(sites, args.camera, args, date=args.date)
 
 
     else:
-        print ("Need to specify either a camera, or a camera type.")
-    sys.exit (0)
-
+        print("Need to specify either a camera, or a camera type.")
+    sys.exit(0)
