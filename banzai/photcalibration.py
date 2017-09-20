@@ -28,11 +28,12 @@ class PhotCalib():
     # default and see where it goes.
     ps1 = None
 
-    def __init__(self):
+    def __init__(self, ps1dir):
         # super(PhotCalib, self).__init__(pipeline_context)
-        self.ps1 = PS1IPP("/home/dharbeck/Catalogs/ps1odi/panstarrs/")
+        # TODO: capture error if no ps1 catalog is fuond at location
+        self.ps1 = PS1IPP(ps1dir)
 
-    def isInCatalogFootprint(dec):
+    def isInCatalogFootprint(self, ra, dec):
         """ Verify if image is in catalog footprint.
             TODO: Account for image field of view
         """
@@ -41,6 +42,9 @@ class PhotCalib():
         return dec >= -30.0
 
     def do_stage(self, images):
+        """ future hook for BANZAI pipeline integration
+
+        """
 
         for i, image in enumerate(images):
             pass
@@ -54,7 +58,6 @@ class PhotCalib():
         Errors conditions:
          if photometricfilter is not supported, none is returned
          if exposure time is < 60 seconds, None is returned.
-
 
 
         :param image: input fits image path+name
@@ -72,7 +75,7 @@ class PhotCalib():
         ra = testimage['SCI'].header['CRVAL1']
         dec = testimage['SCI'].header['CRVAL2']
 
-        if dec < -30:
+        if not self.isInCatalogFootprint(ra, dec):
             _logger.debug("Image not in PS1 footprint. Ignoring")
             testimage.close()
             return None
@@ -81,7 +84,9 @@ class PhotCalib():
 
         # Safeguard against a division by zero downstream.
         if (retCatalog['exptime'] <= 0):
-            retCatalog['exptime'] = 1
+            _logger.debug("Image has exposure time <= 0 % 8.2f. Ignoring." % (retCatalog['exptime']))
+            testimage.close()
+            return None
 
         retCatalog['instfilter'] = testimage['SCI'].header['FILTER']
         retCatalog['airmass'] = testimage['SCI'].header['AIRMASS']
@@ -109,8 +114,6 @@ class PhotCalib():
             _logger.debug ("Exposure is deliberately defocussed by %s, ignoring" %(retCatalog['FOCOBOFF']))
             testimage.close()
             return None
-
-
 
 
         # Get the instrumental filter and the matching reference catalog filter names.
@@ -467,7 +470,7 @@ class PS1IPP:
 
 def crawlDirectory (site, camera,args, date=None):
 
-    photzpStage = PhotCalib()
+    photzpStage = PhotCalib(args.ps1dir)
     if date is None:
         date = '*'
 
@@ -512,6 +515,8 @@ def parseCommandLine ():
 
     parser.add_argument('--log_level', dest='log_level', default='INFO', choices=['DEBUG', 'INFO'],
                         help='Set the debug level')
+
+    parser.add_argument ('--ps1dir', dest = 'ps1dir', default='/home/dharbeck/Catalogs/ps1odi/panstarrs/', help='Directory of PS1 catalog')
 
     parser.add_argument("--diagnosticplotsdir", dest='outputimageRootDir', default=None,
                     help='Output directory for diagnostic photometry plots. No plots generated if option is omitted. ')
