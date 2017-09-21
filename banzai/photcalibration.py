@@ -330,9 +330,6 @@ class PS1IPP:
            from different fits tables for full coverage.
         """
 
-
-
-
         # A lot of safeguarding boiler plate to ensure catalog files are valid.
         if (self.basedir is None) or (not os.path.isdir(self.basedir)):
             _logger.error("Unable to find reference catalog: %s" % (str(self.basedir)))
@@ -463,14 +460,14 @@ class PS1IPP:
                     # ra[0], ra[1], dec[0], dec[1],
                     self.basedir))
             else:
-                _logger.debug("Read a total of %d stars from %d catalogs!" % (full_catalog.shape[0], len(files_to_read)))
+                _logger.debug(
+                    "Read a total of %d stars from %d catalogs!" % (full_catalog.shape[0], len(files_to_read)))
 
         self.PS1toSDSS(full_catalog)
         return full_catalog
 
 
 def crawlDirectory(site, camera, args, date=None):
-
     photzpStage = PhotCalib(args.ps1dir)
 
     if date is None:
@@ -518,16 +515,18 @@ def parseCommandLine():
     parser.add_argument('--log_level', dest='log_level', default='INFO', choices=['DEBUG', 'INFO'],
                         help='Set the debug level')
 
-    parser.add_argument('--ps1dir', dest='ps1dir', default='/home/dharbeck/Catalogs/ps1odi/panstarrs/',
+    parser.add_argument('--ps1dir', dest='ps1dir', default='~/Catalogs/ps1odi/panstarrs/',
                         help='Directory of PS1 catalog')
 
     parser.add_argument("--diagnosticplotsdir", dest='outputimageRootDir', default=None,
                         help='Output directory for diagnostic photometry plots. No plots generated if option is omitted. ')
 
-    parser.add_argument('--imagedbPrefix', dest='imagedbPrefix', default='/home/dharbeck/lcozpplots',
+    parser.add_argument('--imagedbPrefix', dest='imagedbPrefix', default='~/lcozpplots',
                         help='Result output directory. .db file is written here')
+
     parser.add_argument('--imagerootdir', dest='rootdir', default='/nfs/archive/engineering',
                         help="LCO archive root directory")
+
     parser.add_argument('--site', dest='site', default=None, help='sites code for camera')
 
     parser.add_argument('--date', dest='date', default=None, help='Specific date to process.')
@@ -538,8 +537,15 @@ def parseCommandLine():
                              help='camera type to process at selected sites to process. ')
 
     args = parser.parse_args()
+
     logging.basicConfig(level=getattr(logging, args.log_level.upper()),
                         format='%(asctime)s.%(msecs).03d %(levelname)7s: %(module)20s: %(message)s')
+
+    args.imagedbPrefix = os.path.expanduser(args.imagedbPrefix)
+    if args.outputimageRootDir is not None:
+        args.outputimageRootDir = os.path.expanduser(args.outputimageRootDir)
+    args.ps1dir = os.path.expanduser(args.ps1dir)
+
     return args
 
 
