@@ -12,6 +12,7 @@ from StringIO import StringIO
 airmasscorrection = {'gp':0.17, 'rp': 0.11, 'ip': 0.08, 'zp': 0.05,}
 
 
+colorterms = {}
 
 def readDataFile (inputfile):
     file = open (inputfile)
@@ -293,11 +294,34 @@ def plotlongtermtrend (site, enclosure=None, telescope=None, instrument=None, fi
     plt.plot (dateselect,  colortermselect, 'o', markersize=2, c="blue", label="color term %s " % (filter) )
     plt.axhline(y=meancolorterm, color='r', linestyle='-')
     print ("Color term filter %s : % 5.3f" % (filter, meancolorterm))
+
+    if filter not in colorterms:
+        colorterms[filter] = {}
+    colorterms[filter][instrument] = meancolorterm
+
     plt.xlim ([datetime.datetime(2016,01,01),datetime.datetime (2017,10,01)])
     plt.ylim([-0.2,0.2])
     
     plt.savefig ("%s/colortermtrend-%s-%s.png"  % (basedirectory, instrument, filter))
     plt.close()
+
+
+def plotallcolorterms():
+    for filter in colorterms:
+
+        for camera in colorterms [filter]:
+            print ("% 3s % 4s % 5.2f" % (filter, camera, colorterms[filter][camera]))
+
+        cameras = colorterms[filter]
+        terms = []
+        for camera in cameras:
+            terms.append (colorterms[filter][camera])
+        plt.plot (cameras, terms, "o")
+        plt.title (filter)
+        plt.savefig ("colorterms-%s.png" % (filter))
+        plt.close()
+    pass
+
 
 
 import os
@@ -313,9 +337,13 @@ if __name__ == '__main__':
             for filter in ('gp','rp'):
                 site = match.group(1)
                 camera = match.group(2)
-                plotlongtermtrend (site, filter=filter, instrument=camera)
+                if site == 'elp':
+                    plotlongtermtrend (site, filter=filter, instrument=camera)
 
-    plotallmirrormodels()
+    #plotallmirrormodels()
+
+    #plotallcolorterms ()
+
     sys.exit(0)
 
 
