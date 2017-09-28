@@ -184,9 +184,11 @@ class PhotCalib():
         :param m:
         :return:
         """
-        return data[abs(data - np.mean(data)) < m * np.std(data)]
+        std = np.std (data)
+        return data[abs(data - np.median(data)) < m * std]
 
-    def analyzeImage(self, imageName, pickle="photzp.db", outputimageRootDir=None):
+    def analyzeImage(self, imageName, pickle="photzp.db",
+                     outputimageRootDir=None, sqlite3cur = None):
         """ Do full photometric zeropoint analysis on an image
          """
 
@@ -208,7 +210,10 @@ class PhotCalib():
 
         # Calculate the photometric zeropoint.
         # TODO: Robust median w/ rejection, error propagation.
-        photzp = np.median(self.reject_outliers(magZP, 3))
+
+        cleandata =   self.reject_outliers(magZP, 3)
+        photzp = np.median(cleandata)
+        photzpsig = np.std (cleandata)
 
         # calculate color term
 
@@ -268,15 +273,18 @@ class PhotCalib():
 
         # TODO: Make this thread safe, e.g., write to transactional database, or return values for storing externally.
         with open(pickle, 'a') as f:
-            output = "%s %s %s %s %s %s %s %s % 6.3f  % 6.3f\n" % (
+            output = "%s %s %s %s %s %s %s %s % 6.3f  % 6.3f  % 6.3f\n" % (
                 imageName, retCatalog['dateobs'], retCatalog['siteid'], retCatalog['domid'],
                 retCatalog['telescope'], retCatalog['instrument'], retCatalog['instfilter'],
-                retCatalog['airmass'], photzp, colorterm)
+                retCatalog['airmass'], photzp, colorterm, photzpsig)
             _logger.info(output)
             f.write(output)
             f.close()
 
         return photzp
+
+    
+
 
 
 class PS1IPP:
