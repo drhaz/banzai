@@ -486,6 +486,7 @@ def crawlDirectory(site, camera, args, date=None):
 
     imagedb = "%s/%s-%s.db" % (args.imagedbPrefix, site, camera)
     search = "%s/%s/%s/%s/processed/*-[es]91.fits.fz" % (args.rootdir, site, camera, date)
+    #search = "%s/%s/%s/%s/preview/*-[es]11.fits.fz" % (args.rootdir, site, camera, date)
     _logger.info("File search string is: %s" % (search))
 
     inputlist = glob.glob(search)
