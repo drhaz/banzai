@@ -475,8 +475,31 @@ class PS1IPP:
         return full_catalog
 
 
-def crawlDirectory(site, camera, args, date=None):
+def crawlDirectory (directory, imagedb,  args):
+
+
+    search = "%s/*-[es]91.fits.fz" % (directory)
+    inputlist = glob.glob(search)
+    _logger.debug("Found %d entries. Cleaning duplicate entries..." % len(inputlist))
+    # TODO: Do not lie, and actually do clean for duplicate entries!
+    _logger.debug("Starting analysis")
+
+
     photzpStage = PhotCalib(args.ps1dir)
+    for image in inputlist:
+        image = image.rstrip()
+        photzpStage.analyzeImage(image, pickle=imagedb, outputimageRootDir=args.outputimageRootDir)
+
+def crawlSiteCameraArchive(site, camera, args, date=None):
+    '''
+    Process in the archive
+
+    :param site:
+    :param camera:
+    :param args:
+    :param date:
+    :return:
+    '''
 
     if date is None:
         date = '*'
@@ -485,19 +508,13 @@ def crawlDirectory(site, camera, args, date=None):
         site = '*'
 
     imagedb = "%s/%s-%s.db" % (args.imagedbPrefix, site, camera)
-    search = "%s/%s/%s/%s/processed/*-[es]91.fits.fz" % (args.rootdir, site, camera, date)
+    searchdir = "%s/%s/%s/%s/processed" % (args.rootdir, site, camera, date)
     #search = "%s/%s/%s/%s/preview/*-[es]11.fits.fz" % (args.rootdir, site, camera, date)
-    _logger.info("File search string is: %s" % (search))
+    _logger.info("File search string is: %s" % (searchdir))
 
-    inputlist = glob.glob(search)
+    crawlDirectory(searchdir, imagedb, args)
 
-    _logger.debug("Found %d entries. Cleaning duplicate entries..." % len(inputlist))
-    # TODO: Do not lie, and actually do clean for duplicate entries!
-    _logger.debug("Starting analysis")
 
-    for image in inputlist:
-        image = image.rstrip()
-        photzpStage.analyzeImage(image, pickle=imagedb, outputimageRootDir=args.outputimageRootDir)
 
 
 def crawlSite(site, type, args):
@@ -511,7 +528,7 @@ def crawlSite(site, type, args):
 
     for setup in cameras:
         print(setup[0], setup[1])
-        crawlDirectory(setup[0], setup[1], args, args.date)
+        crawlSiteCameraArchive(setup[0], setup[1], args, args.date)
 
 
 def parseCommandLine():
@@ -544,7 +561,7 @@ def parseCommandLine():
     cameragroup.add_argument('--camera', dest='camera', default=None, help='specific camera to process. ')
     cameragroup.add_argument('--cameratype', dest='cameratype', default=None, choices=['fs', 'fl', 'kb'],
                              help='camera type to process at selected sites to process. ')
-
+    cameragroup.add_argument('--crawldirectory', default=None, type=str, help="process all reduced image in specific directoy")
     args = parser.parse_args()
 
     logging.basicConfig(level=getattr(logging, args.log_level.upper()),
@@ -553,6 +570,10 @@ def parseCommandLine():
     args.imagedbPrefix = os.path.expanduser(args.imagedbPrefix)
     if args.outputimageRootDir is not None:
         args.outputimageRootDir = os.path.expanduser(args.outputimageRootDir)
+
+    if args.crawldirectory is not None:
+        args.crawldirectory = os.path.expanduser(args.crawldirectory)
+
     args.ps1dir = os.path.expanduser(args.ps1dir)
 
     return args
@@ -584,7 +605,13 @@ if __name__ == '__main__':
             sites = args.site
 
         print("Calibrating camera ", args.camera, " at site ", sites, ' for date ', args.date)
-        crawlDirectory(sites, args.camera, args, date=args.date)
+        crawlSiteCameraArchive(sites, args.camera, args, date=args.date)
+
+
+    elif args.crawldirectory is not None:
+        imagedb = "%s/%s" % (args.crawldirectory, 'imagezp.db')
+
+        crawlDirectory(args.crawldirectory, imagedb, args)
 
 
     else:
