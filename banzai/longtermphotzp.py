@@ -1,13 +1,14 @@
+from __future__ import absolute_import, division, print_function, unicode_literals
 import matplotlib
 
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import datetime
-import dateutil.parser
 import sys
 import calendar
-from StringIO import StringIO
+from astropy.io import ascii
+import astropy.time as astt
 
 airmasscorrection = {'gp': 0.17, 'rp': 0.09, 'ip': 0.06, 'zp': 0.05, }
 
@@ -15,17 +16,15 @@ colorterms = {}
 
 
 def readDataFile(inputfile):
-    file = open(inputfile)
-    contents = file.read()
+    with open(inputfile, 'r') as file:
+        contents = file.read()
+        file.close()
     contents = contents.replace('UNKNOWN', 'nan')
-    file.close()
-    data = np.genfromtxt(StringIO(contents), unpack=True, dtype=None,
-                         skip_footer=5, \
-                         converters={1: lambda x: dateutil.parser.parse(x)},
-                         names=['name', 'dateobs', 'site', 'dome',
-                                'telescope', 'camera', 'filter', 'airmass',
-                                'zp', 'colorterm', 'zpsig'])
+    data = ascii.read(contents, names=['name', 'dateobs', 'site', 'dome',
+                                       'telescope', 'camera', 'filter', 'airmass',
+                                       'zp', 'colorterm', 'zpsig'], )
 
+    data['dateobs'] = astt.Time(data['dateobs'], scale='utc', format='isot').to_datetime()
     return data
 
 
@@ -166,12 +165,12 @@ def plotallmirrormodels(basedirectory="/home/dharbeck/lcozpplots"):
     modellist = glob.glob("%s/mirrormodel-[fl|fs]*rp.dat" % (basedirectory))
 
     for model in modellist:
-        print model
-        data = np.genfromtxt(model, dtype=None, names=("date", "time", "zp"))
+        print(model)
+        data = ascii.read(model, names=("date", "time", "zp"))
         datestring = np.core.defchararray.add(data['date'], "T")
         datestring = np.core.defchararray.add(datestring, data['time'])
-        date = [np.datetime64(x) for x in datestring]
-        date = np.asarray(date).astype(datetime.datetime)
+
+        date = astt.Time(datestring, scale='utc', format='isot').to_datetime()
 
         # data['zp'] = np.power(10, data['zp']/2.5)
         # data['zp'] = data['zp'] / np.min(data['zp'])
@@ -179,25 +178,23 @@ def plotallmirrormodels(basedirectory="/home/dharbeck/lcozpplots"):
         plt.gcf().autofmt_xdate()
         plt.plot(date, data['zp'], label=model[-11:-7])
 
-        # ax = fig.gca()
-        # ax.set_xticks(numpy.arange(0, 1, 0.1))
-        # ax.set_yticks(numpy.arange(0, 1., 0.1))
     # plt.legend()
     plt.ylabel("phot zeropoint rp")
-    plt.xlim([datetime.datetime(2016, 01, 01), datetime.datetime(2017, 11, 01)])
+    plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 11, 1)])
     plt.grid(True, which='both')
     plt.savefig("%s/allmodels.png" % basedirectory)
     plt.close()
 
 
+
+
 def plotlongtermtrend(site, enclosure=None, telescope=None, instrument=None,
                       filter=None, basedirectory="/home/dharbeck/lcozpplots"):
-    print site, telescope, instrument
+
+    print(site, telescope, instrument)
     inputfile = "%s/%s-%s.db" % (basedirectory, site, instrument)
     mirrorfilename = "%s/mirror_%s.db" % (basedirectory, instrument)
     data = readDataFile(inputfile)
-
-
 
     # down-select data by viability and camera / filer combination
     selection = np.ones(len(data['name']), dtype=bool)
@@ -210,9 +207,9 @@ def plotlongtermtrend(site, enclosure=None, telescope=None, instrument=None,
     selection = selection & np.logical_not(np.isnan(data['airmass']))
 
     if (len(selection) == 0):
-        print (
+        print(
             "Zero viable elements left for %s %s. Ignoring" % (
-            site, instrument))
+                site, instrument))
         return
 
     zpselect = data['zp'][selection]
@@ -228,7 +225,7 @@ def plotlongtermtrend(site, enclosure=None, telescope=None, instrument=None,
         if instrument.startswith("fl"):  # 1m sinistro
             ymax = 23.95
         if instrument.startswith("kb"):  # 0.4m sbigs
-            ymax = 22
+            ymax = 23
             photzpmaxnoise = 0.5
 
     # Calculate air-mass corrected photometric zeropoint
@@ -238,7 +235,7 @@ def plotlongtermtrend(site, enclosure=None, telescope=None, instrument=None,
     # find the overall trend of zeropoint variations.
     detrend = photdate = photflat = None
     try:
-        _x, _y = findUpperEnvelope(dateselect[zpsigselect<photzpmaxnoise], zp_air[zpsigselect<photzpmaxnoise],
+        _x, _y = findUpperEnvelope(dateselect[zpsigselect < photzpmaxnoise], zp_air[zpsigselect < photzpmaxnoise],
                                    ymax=ymax)
 
         outmodelfname = "%s/mirrormodel-%s-%s.dat" % (
@@ -252,7 +249,7 @@ def plotlongtermtrend(site, enclosure=None, telescope=None, instrument=None,
     except Exception as e:
         detrend = None
         _x = None
-        print ("Failure while detrending!", e)
+        print("Failure while detrending!", e)
     plt.figure()
     # plt.plot (dateselect, zpselect, ".", c="grey", label="no airmass correction")
 
@@ -262,7 +259,7 @@ def plotlongtermtrend(site, enclosure=None, telescope=None, instrument=None,
              c="grey",
              label="large error")
     plt.plot(dateselect[zpsigselect < photzpmaxnoise], zp_air[zpsigselect < photzpmaxnoise], 'o',
-            
+
              markersize=2,
              c="blue",
              label="small error")
@@ -275,7 +272,7 @@ def plotlongtermtrend(site, enclosure=None, telescope=None, instrument=None,
         # plt.plot (photdate, photflag/10. + ymax - 1.5, ".", c='green', label = "photometric flag")
 
     plt.legend()
-    plt.xlim([datetime.datetime(2016, 01, 01), datetime.datetime(2017, 11, 01)])
+    plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 11, 1)])
     plt.ylim([ymax - 2, ymax])
     plt.gcf().autofmt_xdate()
     plt.xlabel("DATE-OBS")
@@ -324,8 +321,6 @@ def plotlongtermtrend(site, enclosure=None, telescope=None, instrument=None,
         "%s/airmasstrend-%s-%s.png" % (basedirectory, instrument, filter))
     plt.close()
 
-
-
     ### Color terms
     plt.figure()
     selection = selection & np.logical_not(np.isnan(data['colorterm']))
@@ -337,20 +332,19 @@ def plotlongtermtrend(site, enclosure=None, telescope=None, instrument=None,
         selection_hinoise], '.', markersize=2, c="grey",
              label="color term [ hi sigma] %s " % (filter))
 
-
     colortermselect = data['colorterm'][selection_lonoise]
     dateselect = data['dateobs'][selection_lonoise]
     meancolorterm = np.median(colortermselect)
     plt.plot(dateselect, colortermselect, 'o', markersize=2, c="blue",
              label="color term [low sigma] %s " % (filter))
     plt.axhline(y=meancolorterm, color='r', linestyle='-')
-    print ("Color term filter %s : % 5.3f" % (filter, meancolorterm))
+    print("Color term filter %s : % 5.3f" % (filter, meancolorterm))
 
     if filter not in colorterms:
         colorterms[filter] = {}
     colorterms[filter][instrument] = meancolorterm
 
-    plt.xlim([datetime.datetime(2016, 01, 01), datetime.datetime(2017, 11, 01)])
+    plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 11, 1)])
     plt.ylim([-0.2, 0.2])
 
     plt.savefig(
@@ -362,9 +356,9 @@ def plotallcolorterms():
     for filter in colorterms:
 
         for camera in colorterms[filter]:
-            print (
+            print(
                 "% 3s % 4s % 5.2f" % (
-                filter, camera, colorterms[filter][camera]))
+                    filter, camera, colorterms[filter][camera]))
 
         cameras = colorterms[filter]
         terms = []
@@ -382,22 +376,21 @@ import re
 
 if __name__ == '__main__':
     plt.style.use('ggplot')
-    basedirectory = "/Users/harbeck/lcoplots"
+    basedirectory = "/home/dharbeck/lcozpplots"
     databases = [each for each in os.listdir(basedirectory) if
-                 each.endswith('.db')]
+                 (each.endswith('.db'))]
 
     for db in databases:
         match = re.search('(\D\D\D)-(\D\D\d\d)\.db', db)
         if match:
-            for filter in ( 'gp', 'rp'):
-                site = match.group(1)
-                camera = match.group(2)
-
+            site = match.group(1)
+            camera = match.group(2)
+            for filter in ('gp', 'rp'):
                 plotlongtermtrend(site, filter=filter, instrument=camera,
-                                       basedirectory=basedirectory)
+                                  basedirectory=basedirectory)
 
-    plotallmirrormodels(basedirectory = basedirectory)
+    plotallmirrormodels(basedirectory=basedirectory)
 
-    #plotallcolorterms ()
+    # plotallcolorterms ()
 
     sys.exit(0)
