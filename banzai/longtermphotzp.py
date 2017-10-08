@@ -19,12 +19,13 @@ airmasscorrection = {'gp': 0.17, 'rp': 0.09, 'ip': 0.06, 'zp': 0.05, }
 
 colorterms = {}
 telescopedict={
-    'lsc': ['Dome-02:1m0a','Dome-03:1m0a','Dome-04:1m0a'],
-    'coj': ['Clamshell-02:2m0a', 'Dome-03:1m0a', 'Dome-08:1m0a', 'Clamshell-02:0m4a','Clamshell-02:0m4b', ],
-    'ogg': ['Clamshell-01:2m0a','Clamshell-01:0m4a','Clamshell-01:0m4b', ] ,
-    'elp': ['Dome-08:1m0a',],
-    'cpt': ['Dome-05:1m0a', 'Dome-06:1m0a', 'Dome-07:1m0a',],
-    'tfn': ['Aqawan-01:0m4a','Aqawan-01:0m4b',]
+    'lsc': ['doma:1m0a','domb:1m0a','domc:1m0a', 'aqwa:0m4a', 'aqwb:0m4a'],
+    'coj': ['clma:2m0a', 'doma:1m0a', 'domb:1m0a', 'clma:0m4a','clma:0m4b',],
+    'ogg': ['clma:2m0a','clma:0m4a','clma:0m4b',] ,
+    'elp': ['doma:1m0a',],
+    'cpt': ['doma:1m0a', 'domb:1m0a', 'domc:1m0a',],
+    'tfn': ['aqwa:0m4a','aqwa-01:0m4b',],
+    'sqa': ['doma:0m8a']
 }
 
 
@@ -33,18 +34,28 @@ def readDataFile(inputfile):
     with open(inputfile, 'r') as file:
         contents = file.read()
         file.close()
+
         contents = contents.replace('UNKNOWN', 'nan')
         data = ascii.read(contents, names=['name', 'dateobs', 'site', 'dome',
                                        'telescope', 'camera', 'filter', 'airmass',
                                        'zp', 'colorterm', 'zpsig'], )
 
         data['dateobs'] = astt.Time(data['dateobs'], scale='utc', format='isot').to_datetime()
+
         return data
 
     return None
 
 
 def getCombineddataByTelescope (site, telescope, context, instrument=None):
+    """
+    Concatenate all zeropoint data for a site, and select by telescope and instrument.
+    :param site:
+    :param telescope: string slecting dome *& telescope: 'domb:1m0a'
+    :param context:
+    :param instrument:
+    :return: concatenated data for a site / tel / isntrument selection.
+    """
 
     inputfiles = glob.glob("%s/%s-%s.db" % (context.imagedbPrefix, site, '*' if instrument is None else instrument))
     alldata = None
@@ -62,9 +73,11 @@ def getCombineddataByTelescope (site, telescope, context, instrument=None):
             except Exception as e:
                 print ("Failed to append data for file %s" % inputfile, e)
 
+    if alldata is None:
+        return None
 
+    # Helpful diagnostic tool to see what data are pulled in.
     domedict = np.unique (alldata['dome'])
-
     for dome in domedict:
         teldict = np.unique(alldata [ alldata['dome'] == dome] ['telescope'])
         print (site, dome, teldict)
@@ -80,6 +93,9 @@ def plotlongtermtrend(site,telescope,  filter, context, instrument=None):
 
     data = getCombineddataByTelescope(site, telescope, context, instrument)
 
+    if data is None:
+        print ("no data returned, ignoring")
+        return
     # down-select data by viability and camera / filer combination
     selection = np.ones(len(data['name']), dtype=bool)
 
@@ -154,7 +170,7 @@ def plotlongtermtrend(site,telescope,  filter, context, instrument=None):
     plt.gcf().autofmt_xdate()
     plt.xlabel("DATE-OBS")
     plt.ylabel("Photometric Zeropoint %s" % (filter))
-    plt.title("Long term throughput  %s in %s" % (instrument, filter))
+    plt.title("Long term throughput  %s:%s in %s" % (site, telescope, filter))
 
     if (instrument in ("kb97", "kb98")):
         plt.axvline(x=datetime.datetime(2017, 6, 30), color='k', linestyle='--')
@@ -216,7 +232,7 @@ def plotlongtermtrend(site,telescope,  filter, context, instrument=None):
 
 
 
-def findUpperEnvelope(dateobs, datum, range=1, ymax=24.2):
+def findUpperEnvelope(dateobs, datum, ymax=24.2):
     """
     Find the upper envelope of a photZP time line
 
@@ -268,9 +284,8 @@ def findUpperEnvelope(dateobs, datum, range=1, ymax=24.2):
         startdate = startdate + datetime.timedelta(days=1)
 
     # filter the daily zero point variation. Work in progress.
-
     medianrange = 7
-    newday_y = scipy.signal.medfilt (day_y,medianrange)
+    newday_y = scipy.signal.medfilt (day_y, medianrange)
 
     return np.asarray(day_x), newday_y
 
@@ -350,7 +365,7 @@ def plotallmirrormodels(context):
             continue
 
         plt.gcf().autofmt_xdate()
-        plt.plot(date, data['zp'], label=model[-11:-7])
+        plt.plot(date, data['zp'], label=model[-20:-4].replace('-',':'))
 
     plt.legend()
     plt.ylabel("phot zeropoint rp")
@@ -358,13 +373,6 @@ def plotallmirrormodels(context):
     plt.grid(True, which='both')
     plt.savefig("%s/allmodels.png" % context.imagedbPrefix, bbox_inches='tight')
     plt.close()
-
-
-
-
-
-
-
 
 
 def plotallcolorterms():
@@ -408,7 +416,6 @@ def parseCommandLine():
                         format='%(asctime)s.%(msecs).03d %(levelname)7s: %(module)20s: %(message)s')
 
     args.imagedbPrefix = os.path.expanduser(args.imagedbPrefix)
-
 
     return args
 
