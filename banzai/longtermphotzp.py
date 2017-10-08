@@ -24,7 +24,7 @@ telescopedict={
     'ogg': ['clma:2m0a','clma:0m4a','clma:0m4b',] ,
     'elp': ['doma:1m0a',],
     'cpt': ['doma:1m0a', 'domb:1m0a', 'domc:1m0a',],
-    'tfn': ['aqwa:0m4a','aqwa-01:0m4b',],
+    'tfn': ['aqwa:0m4a','aqwa:0m4b',],
     'sqa': ['doma:0m8a']
 }
 
@@ -61,7 +61,7 @@ def getCombineddataByTelescope (site, telescope, context, instrument=None):
     alldata = None
 
     for inputfile in inputfiles:
-        print ('Reading in %s' % inputfile)
+        #print ('Reading in %s' % inputfile)
         data = readDataFile (inputfile)
         if data is None:
             continue
@@ -77,13 +77,12 @@ def getCombineddataByTelescope (site, telescope, context, instrument=None):
         return None
 
     # Helpful diagnostic tool to see what data are pulled in.
-    domedict = np.unique (alldata['dome'])
-    for dome in domedict:
-        teldict = np.unique(alldata [ alldata['dome'] == dome] ['telescope'])
-        print (site, dome, teldict)
+    # domedict = np.unique (alldata['dome'])
+    # for dome in domedict:
+    #     teldict = np.unique(alldata [ alldata['dome'] == dome] ['telescope'])
+    #     print (site, dome, teldict)
 
     dome,tel = telescope.split (':')
-    print (dome, tel)
     selection = (alldata['dome'] == dome) & (alldata['telescope'] == tel)
     alldata = alldata[selection]
     return alldata
@@ -94,7 +93,6 @@ def plotlongtermtrend(site,telescope,  filter, context, instrument=None):
     data = getCombineddataByTelescope(site, telescope, context, instrument)
 
     if data is None:
-        print ("no data returned, ignoring")
         return
     # down-select data by viability and camera / filer combination
     selection = np.ones(len(data['name']), dtype=bool)
@@ -109,9 +107,7 @@ def plotlongtermtrend(site,telescope,  filter, context, instrument=None):
     selection = selection & np.logical_not(np.isnan(data['airmass']))
 
     if (len(selection) == 0):
-        print(
-            "Zero viable elements left for %s %s. Ignoring" % (
-                site, instrument))
+
         return
 
     zpselect = data['zp'][selection]
@@ -349,9 +345,11 @@ def trendcorrectthroughput(datadate, datazp, modeldate, modelzp):
     return corrected, day_x, day_y
 
 
-def plotallmirrormodels(context):
+def plotallmirrormodels(context, type='[2m0|1m0]'):
     import glob
-    modellist = glob.glob("%s/mirrormodel*[1m0|2m0][abc]-rp.dat" % (context.imagedbPrefix))
+
+    filter = 'rp'
+    modellist = glob.glob("%s/mirrormodel*%s[abc]-%s.dat" % (context.imagedbPrefix, type, filter))
 
     for model in modellist:
         print(model)
@@ -365,13 +363,15 @@ def plotallmirrormodels(context):
             continue
 
         plt.gcf().autofmt_xdate()
-        plt.plot(date, data['zp'], label=model[-20:-4].replace('-',':'))
+        plt.plot(date, data['zp'], label=model[-20:-8].replace('-',':'))
 
-    plt.legend()
-    plt.ylabel("phot zeropoint rp")
+    plt.legend(bbox_to_anchor=(1.01, 1), loc='upper left', ncol=1)
+    plt.xlabel('DATE-OBS')
+    plt.ylabel("phot zeropoint %s" % filter)
     plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 11, 1)])
+    plt.title ("Photometric zeropoint model in filter %s" % filter)
     plt.grid(True, which='both')
-    plt.savefig("%s/allmodels.png" % context.imagedbPrefix, bbox_inches='tight')
+    plt.savefig("%s/allmodels_%s.png" % (context.imagedbPrefix, type), bbox_inches='tight')
     plt.close()
 
 
@@ -407,8 +407,8 @@ def parseCommandLine():
     parser.add_argument('--databasedirectory', dest='imagedbPrefix', default='~/lcozpplots',
                         help='Directory containing photometryc databases')
     parser.add_argument('--site', dest='site', default=None, help='sites code for camera')
-    parser.add_argument('--enclosure', default=None, help='specific camera to process. ')
-    parser.add_argument('--telescope', default=None, help='Telescope id')
+    parser.add_argument('--telescope', default=None, help='Telescope id. written inform enclosure:telescope, e.g., "domb:1m0a"')
+    parser.add_argument('--filter', default='rp', help='Which filter to process.', choices=['gp','rp','ip','zp'])
 
     args = parser.parse_args()
 
@@ -441,13 +441,24 @@ if __name__ == '__main__':
     else:
         crawlsites = telescopedict
 
+
     for site in crawlsites:
-        for telescope in telescopedict[site]:
-            plotlongtermtrend(site, telescope, 'rp',  args, )
+
+        if args.telescope is  None:
+            crawlScopes = telescopedict[site]
+        else:
+            crawlScopes = [args.telescope,]
+
+        for telescope in crawlScopes:
+
+            print (site, telescope)
+            plotlongtermtrend(site, telescope, args.filter,  args, )
 
 
     plotallmirrormodels(args)
+    plotallmirrormodels(args, type='0m4')
 
-    # plotallcolorterms ()
+
+# plotallcolorterms ()
 
     sys.exit(0)
