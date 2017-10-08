@@ -10,22 +10,210 @@ import calendar
 from astropy.io import ascii
 import astropy.time as astt
 import scipy.signal
+import argparse
+import logging
+import glob
+
+
 airmasscorrection = {'gp': 0.17, 'rp': 0.09, 'ip': 0.06, 'zp': 0.05, }
 
 colorterms = {}
+telescopedict={
+    'lsc': ['Dome-02:1m0a','Dome-03:1m0a','Dome-04:1m0a'],
+    'coj': ['Clamshell-02:2m0a', 'Dome-03:1m0a', 'Dome-08:1m0a', 'Clamshell-02:0m4a','Clamshell-02:0m4b', ],
+    'ogg': ['Clamshell-01:2m0a','Clamshell-01:0m4a','Clamshell-01:0m4b', ] ,
+    'elp': ['Dome-08:1m0a',],
+    'cpt': ['Dome-05:1m0a', 'Dome-06:1m0a', 'Dome-07:1m0a',],
+    'tfn': ['Aqawan-01:0m4a','Aqawan-01:0m4b',]
+}
 
 
 def readDataFile(inputfile):
+
     with open(inputfile, 'r') as file:
         contents = file.read()
         file.close()
-    contents = contents.replace('UNKNOWN', 'nan')
-    data = ascii.read(contents, names=['name', 'dateobs', 'site', 'dome',
+        contents = contents.replace('UNKNOWN', 'nan')
+        data = ascii.read(contents, names=['name', 'dateobs', 'site', 'dome',
                                        'telescope', 'camera', 'filter', 'airmass',
                                        'zp', 'colorterm', 'zpsig'], )
 
-    data['dateobs'] = astt.Time(data['dateobs'], scale='utc', format='isot').to_datetime()
-    return data
+        data['dateobs'] = astt.Time(data['dateobs'], scale='utc', format='isot').to_datetime()
+        return data
+
+    return None
+
+
+def getCombineddataByTelescope (site, telescope, context, instrument=None):
+
+    inputfiles = glob.glob("%s/%s-%s.db" % (context.imagedbPrefix, site, '*' if instrument is None else instrument))
+    alldata = None
+
+    for inputfile in inputfiles:
+        print ('Reading in %s' % inputfile)
+        data = readDataFile (inputfile)
+        if data is None:
+            continue
+        if alldata is None:
+            alldata = data
+        else:
+            try:
+                alldata = np.append (alldata, data)
+            except Exception as e:
+                print ("Failed to append data for file %s" % inputfile, e)
+
+
+    domedict = np.unique (alldata['dome'])
+
+    for dome in domedict:
+        teldict = np.unique(alldata [ alldata['dome'] == dome] ['telescope'])
+        print (site, dome, teldict)
+
+    dome,tel = telescope.split (':')
+    print (dome, tel)
+    selection = (alldata['dome'] == dome) & (alldata['telescope'] == tel)
+    alldata = alldata[selection]
+    return alldata
+
+
+def plotlongtermtrend(site,telescope,  filter, context, instrument=None):
+
+    data = getCombineddataByTelescope(site, telescope, context, instrument)
+
+    # down-select data by viability and camera / filer combination
+    selection = np.ones(len(data['name']), dtype=bool)
+
+    if filter is not None:
+        selection = selection & (data['filter'] == filter)
+    if instrument is not None:
+        selection = selection & (data['camera'] == instrument)
+
+    # weed out bad data
+    selection = selection & np.logical_not(np.isnan(data['zp']))
+    selection = selection & np.logical_not(np.isnan(data['airmass']))
+
+    if (len(selection) == 0):
+        print(
+            "Zero viable elements left for %s %s. Ignoring" % (
+                site, instrument))
+        return
+
+    zpselect = data['zp'][selection]
+    dateselect = data['dateobs'][selection]
+    airmasselect = data['airmass'][selection]
+    cameraselect = data['camera'][selection]
+    zpsigselect = data['zpsig'][selection]
+    # except:
+    #     zpsigselect = zpsigselect * 0
+
+    ymax = 24.2  # good starting point for 2m:spectral cameras
+    photzpmaxnoise = 0.2
+    if (telescope is not None):
+
+        if '0m4' in telescope:  # 0.4m sbigs
+            ymax = 22.5
+            photzpmaxnoise = 0.5
+
+    # Calculate air-mass corrected photometric zeropoint
+    zp_air = zpselect + airmasscorrection[filter] * airmasselect - airmasscorrection[filter]
+
+    # find the overall trend of zeropoint variations, save to output file.
+    _x, _y = findUpperEnvelope(dateselect[zpsigselect < photzpmaxnoise], zp_air[zpsigselect < photzpmaxnoise],
+                               ymax=ymax)
+    outmodelfname = "%s/mirrormodel-%s-%s-%s.dat" % (
+        context.imagedbPrefix, site, telescope, filter)
+    np.savetxt(outmodelfname, np.c_[_x, _y], header="DATE-OBS zp envelope",
+               fmt="%s %f ")
+
+    plt.figure()
+
+    uniquecameras = np.unique (cameraselect)
+
+    for uc in uniquecameras:
+    # plot zeropoint with differnt markers per camera
+
+        plt.plot(dateselect[(zpsigselect <= photzpmaxnoise) & (cameraselect == uc)], zp_air[(zpsigselect <= photzpmaxnoise) & (cameraselect == uc)],
+             'o',
+             markersize=2,
+
+             label=uc)
+        plt.plot(dateselect[zpsigselect > photzpmaxnoise], zp_air[zpsigselect > photzpmaxnoise], '.',
+             markersize=1,
+             c="grey",
+             )
+
+    if _x is not None:
+        plt.plot(_x, _y, "-", c='red', label='upper envelope')
+
+    else:
+        print ("Mirror model failed to compute. not plotting !")
+
+    plt.legend()
+    plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 11, 1)])
+    plt.ylim([ymax - 2, ymax])
+    plt.gcf().autofmt_xdate()
+    plt.xlabel("DATE-OBS")
+    plt.ylabel("Photometric Zeropoint %s" % (filter))
+    plt.title("Long term throughput  %s in %s" % (instrument, filter))
+
+    if (instrument in ("kb97", "kb98")):
+        plt.axvline(x=datetime.datetime(2017, 6, 30), color='k', linestyle='--')
+    if (instrument in ("fl03", "xxx")):
+        plt.axvline(x=datetime.datetime(2017, 8, 31), color='k', linestyle='--')
+
+    outfigname = "%s/photzptrend-%s-%s-%s.png" % (
+        context.imagedbPrefix, site, telescope, filter)
+    plt.savefig(outfigname, dpi=600)
+    plt.close()
+
+
+    plt.figure()
+    plt.hist(zpsigselect, 50, range=[0, 1], normed=True)
+    outerrorhistfname = "%s/errorhist-%s-%s-%s.png" % (
+        context.imagedbPrefix, site, telescope, filter)
+    plt.savefig(outerrorhistfname)
+    plt.close()
+
+    plt.figure()
+    plt.plot(airmasselect, zpselect, ".", c="grey")
+    plt.plot(airmasselect, zp_air, ".", c="blue")
+    plt.xlabel("Airmass")
+    plt.ylabel("Photomertic Zeropoint %s" % (filter))
+    meanzp = np.nanmedian(zpselect)
+    plt.ylim([meanzp - 0.5, meanzp + 0.5])
+    plt.savefig(
+        "%s/airmasstrend-%s-%s-%s.png" % (context.imagedbPrefix, site, telescope, filter))
+    plt.close()
+
+    ### Color terms
+    plt.figure()
+    selection = selection & np.logical_not(np.isnan(data['colorterm']))
+    selection = selection & (np.abs(data['colorterm']) < 0.3)
+    selection_lonoise = selection & (data['zpsig'] < 0.2)
+    selection_hinoise = selection & (data['zpsig'] >= 0.2)
+
+    plt.plot(data['dateobs'][selection_hinoise], data['colorterm'][
+        selection_hinoise], '.', markersize=2, c="grey",
+             label="color term [ hi sigma] %s " % (filter))
+    colortermselect = data['colorterm'][selection_lonoise]
+    dateselect = data['dateobs'][selection_lonoise]
+    meancolorterm = np.median(colortermselect)
+    plt.plot(dateselect, colortermselect, 'o', markersize=2, c="blue",
+             label="color term [low sigma] %s " % (filter))
+    plt.axhline(y=meancolorterm, color='r', linestyle='-')
+    print("Color term filter %s : % 5.3f" % (filter, meancolorterm))
+
+    if filter not in colorterms:
+        colorterms[filter] = {}
+    colorterms[filter][instrument] = meancolorterm
+
+    plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 11, 1)])
+    plt.ylim([-0.2, 0.2])
+
+    plt.savefig(
+        "%s/colortermtrend-%s-%s-%s.png" % (context.imagedbPrefix, site, telescope, filter))
+    plt.close()
+
 
 
 def findUpperEnvelope(dateobs, datum, range=1, ymax=24.2):
@@ -81,31 +269,8 @@ def findUpperEnvelope(dateobs, datum, range=1, ymax=24.2):
 
     # filter the daily zero point variation. Work in progress.
 
-    medianrange = 1
-    newday_y = np.asarray(day_y)
-
-
-    newday_y = scipy.signal.medfilt (day_y,5)
-
-
-    # if len(day_y) > 0:
-    #
-    #     newday_y = [day_y[0]]
-    #
-    #     for y in day_y:
-    #
-    #         last = newday_y[len(newday_y) - 1]
-    #         correction = y - last
-    #
-    #         if (np.abs(correction) < 0.1):
-    #             upd = last + 1 * correction
-    #         elif np.abs(correction) < 0.4:
-    #             upd = last + 0.2 * correction
-    #         else:
-    #             upd = last + 0.1 * correction
-    #         newday_y.append(upd)
-    # else:
-    #     newday_y = [0, 0]
+    medianrange = 7
+    newday_y = scipy.signal.medfilt (day_y,medianrange)
 
     return np.asarray(day_x), newday_y
 
@@ -169,20 +334,20 @@ def trendcorrectthroughput(datadate, datazp, modeldate, modelzp):
     return corrected, day_x, day_y
 
 
-def plotallmirrormodels(basedirectory="/home/dharbeck/lcozpplots"):
+def plotallmirrormodels(context):
     import glob
-    modellist = glob.glob("%s/mirrormodel-[fl|fs]*rp.dat" % (basedirectory))
+    modellist = glob.glob("%s/mirrormodel*[1m0|2m0][abc]-rp.dat" % (context.imagedbPrefix))
 
     for model in modellist:
         print(model)
-        data = ascii.read(model, names=("date", "time", "zp"))
-        datestring = np.core.defchararray.add(data['date'], "T")
-        datestring = np.core.defchararray.add(datestring, data['time'])
+        try:
+            data = ascii.read(model, names=("date", "time", "zp"))
+            datestring = np.core.defchararray.add(data['date'], "T")
+            datestring = np.core.defchararray.add(datestring, data['time'])
 
-        date = astt.Time(datestring, scale='utc', format='isot').to_datetime()
-
-        # data['zp'] = np.power(10, data['zp']/2.5)
-        # data['zp'] = data['zp'] / np.min(data['zp'])
+            date = astt.Time(datestring, scale='utc', format='isot').to_datetime()
+        except Exception as e:
+            continue
 
         plt.gcf().autofmt_xdate()
         plt.plot(date, data['zp'], label=model[-11:-7])
@@ -191,167 +356,15 @@ def plotallmirrormodels(basedirectory="/home/dharbeck/lcozpplots"):
     plt.ylabel("phot zeropoint rp")
     plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 11, 1)])
     plt.grid(True, which='both')
-    plt.savefig("%s/allmodels.png" % basedirectory, bbox_inches='tight')
+    plt.savefig("%s/allmodels.png" % context.imagedbPrefix, bbox_inches='tight')
     plt.close()
 
 
 
 
-def plotlongtermtrend(site, enclosure=None, telescope=None, instrument=None,
-                      filter=None, basedirectory="/home/dharbeck/lcozpplots"):
-
-    print(site, telescope, instrument)
-    inputfile = "%s/%s-%s.db" % (basedirectory, site, instrument)
-    mirrorfilename = "%s/mirror_%s.db" % (basedirectory, instrument)
-    data = readDataFile(inputfile)
-
-    # down-select data by viability and camera / filer combination
-    selection = np.ones(len(data['name']), dtype=bool)
-
-    if filter is not None:
-        selection = selection & (data['filter'] == filter)
-    if instrument is not None:
-        selection = selection & (data['camera'] == instrument)
-    selection = selection & np.logical_not(np.isnan(data['zp']))
-    selection = selection & np.logical_not(np.isnan(data['airmass']))
-
-    if (len(selection) == 0):
-        print(
-            "Zero viable elements left for %s %s. Ignoring" % (
-                site, instrument))
-        return
-
-    zpselect = data['zp'][selection]
-    dateselect = data['dateobs'][selection]
-    airmasselect = data['airmass'][selection]
-    try:
-        zpsigselect = data['zpsig'][selection]
-    except:
-        zpsigselect = zpsigselect * 0
-    ymax = 24.2  # good starting point for 2m:spectral cameras
-    photzpmaxnoise = 0.2
-    if (instrument is not None):
-        if instrument.startswith("fl"):  # 1m sinistro
-            ymax = 23.95
-        if instrument.startswith("kb"):  # 0.4m sbigs
-            ymax = 23
-            photzpmaxnoise = 0.5
-
-    # Calculate air-mass corrected photometric zeropoint
-    zp_air = zpselect + airmasscorrection[filter] * airmasselect - \
-             airmasscorrection[filter]
-
-    # find the overall trend of zeropoint variations.
-    detrend = photdate = photflat = None
-
-    _x, _y = findUpperEnvelope(dateselect[zpsigselect < photzpmaxnoise], zp_air[zpsigselect < photzpmaxnoise],
-                                   ymax=ymax)
-    outmodelfname = "%s/mirrormodel-%s-%s.dat" % (
-            basedirectory, instrument, filter)
-    np.savetxt(outmodelfname, np.c_[_x, _y], header="DATE-OBS zp envelope",
-                   fmt="%s %f ")
 
 
 
-    plt.figure()
-    # plt.plot (dateselect, zpselect, ".", c="grey", label="no airmass correction")
-
-    plt.plot(dateselect[zpsigselect >= photzpmaxnoise], zp_air[zpsigselect >= photzpmaxnoise],
-             '.',
-             markersize=1,
-             c="grey",
-             label="large error")
-    plt.plot(dateselect[zpsigselect < photzpmaxnoise], zp_air[zpsigselect < photzpmaxnoise], 'o',
-
-             markersize=2,
-             c="blue",
-             label="small error")
-
-    if _x is not None:
-        plt.plot(_x, _y, "-", c='red', label='upper envelope')
-
-    else:
-        print ("Mirror model failed to compute!")
-
-    plt.legend()
-    plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 11, 1)])
-    plt.ylim([ymax - 2, ymax])
-    plt.gcf().autofmt_xdate()
-    plt.xlabel("DATE-OBS")
-    plt.ylabel("Photometric Zeropoint %s" % (filter))
-    plt.title("Long term throughput  %s in %s" % (instrument, filter))
-
-    if (instrument in ("kb97", "kb98")):
-        plt.axvline(x=datetime.datetime(2017, 6, 30), color='k', linestyle='--')
-    if (instrument in ("fl03", "xxx")):
-        plt.axvline(x=datetime.datetime(2017, 8, 31), color='k', linestyle='--')
-
-    outfigname = "%s/photzptrend-%s-%s.png" % (
-        basedirectory, instrument, filter)
-    plt.savefig(outfigname, dpi=600)
-    plt.close()
-
-    outdetrendfname = "%s/photdetrend-%s-%s.dat" % (
-        basedirectory, instrument, filter)
-
-    if detrend is not None:
-        np.savetxt(outdetrendfname, np.c_[dateselect, zp_air, detrended],
-                   header="DATE-OBS photzp photzp_detrended",
-                   fmt="%s %f %f")
-
-    plt.close()
-
-    plt.figure()
-
-    plt.hist(zpsigselect, 50, range=[0, 1], normed=True)
-    outerrorhistfname = "%s/errorhist-%s-%s.png" % (
-        basedirectory, instrument, filter)
-    plt.savefig(outerrorhistfname)
-    plt.close()
-
-    plt.figure()
-
-    plt.plot(airmasselect, zpselect, ".", c="grey")
-    plt.plot(airmasselect, zp_air, ".", c="blue")
-
-    plt.xlabel("Airmass")
-    plt.ylabel("Photomertic Zeropoint %s" % (filter))
-    meanzp = np.nanmedian(zpselect)
-    plt.ylim([meanzp - 0.5, meanzp + 0.5])
-
-    plt.savefig(
-        "%s/airmasstrend-%s-%s.png" % (basedirectory, instrument, filter))
-    plt.close()
-
-    ### Color terms
-    plt.figure()
-    selection = selection & np.logical_not(np.isnan(data['colorterm']))
-    selection = selection & (np.abs(data['colorterm']) < 0.3)
-    selection_lonoise = selection & (data['zpsig'] < 0.2)
-    selection_hinoise = selection & (data['zpsig'] >= 0.2)
-
-    plt.plot(data['dateobs'][selection_hinoise], data['colorterm'][
-        selection_hinoise], '.', markersize=2, c="grey",
-             label="color term [ hi sigma] %s " % (filter))
-
-    colortermselect = data['colorterm'][selection_lonoise]
-    dateselect = data['dateobs'][selection_lonoise]
-    meancolorterm = np.median(colortermselect)
-    plt.plot(dateselect, colortermselect, 'o', markersize=2, c="blue",
-             label="color term [low sigma] %s " % (filter))
-    plt.axhline(y=meancolorterm, color='r', linestyle='-')
-    print("Color term filter %s : % 5.3f" % (filter, meancolorterm))
-
-    if filter not in colorterms:
-        colorterms[filter] = {}
-    colorterms[filter][instrument] = meancolorterm
-
-    plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 11, 1)])
-    plt.ylim([-0.2, 0.2])
-
-    plt.savefig(
-        "%s/colortermtrend-%s-%s.png" % (basedirectory, instrument, filter))
-    plt.close()
 
 
 def plotallcolorterms():
@@ -373,28 +386,60 @@ def plotallcolorterms():
     pass
 
 
+def parseCommandLine():
+    """ Read command line parameters
+    """
+
+    parser = argparse.ArgumentParser(
+        description='Calculate long-term trends in photometric database.')
+
+    parser.add_argument('--log_level', dest='log_level', default='INFO', choices=['DEBUG', 'INFO'],
+                        help='Set the debug level')
+
+    parser.add_argument('--databasedirectory', dest='imagedbPrefix', default='~/lcozpplots',
+                        help='Directory containing photometryc databases')
+    parser.add_argument('--site', dest='site', default=None, help='sites code for camera')
+    parser.add_argument('--enclosure', default=None, help='specific camera to process. ')
+    parser.add_argument('--telescope', default=None, help='Telescope id')
+
+    args = parser.parse_args()
+
+    logging.basicConfig(level=getattr(logging, args.log_level.upper()),
+                        format='%(asctime)s.%(msecs).03d %(levelname)7s: %(module)20s: %(message)s')
+
+    args.imagedbPrefix = os.path.expanduser(args.imagedbPrefix)
+
+
+    return args
+
+
 import os
 import re
+
+
+
+
+
+
+
 
 if __name__ == '__main__':
     plt.style.use('ggplot')
     matplotlib.rcParams['savefig.dpi'] = 600
-    basedirectory = "/home/dharbeck/lcozpplots"
-    databases = [each for each in os.listdir(basedirectory) if
-                 (each.endswith('.db'))]
 
-    for db in databases:
-        match = re.search('(\D\D\D)-(\D\D\d\d)\.db', db)
-        if match:
-            site = match.group(1)
-            camera = match.group(2)
-            for filter in ('gp', 'rp'):
-                # if (filter == 'rp') and (camera == 'fs02'):
-                # plotlongtermtrend(site, filter=filter, instrument=camera,
-                #                    basedirectory=basedirectory)
-                pass
+    args = parseCommandLine()
 
-    plotallmirrormodels(basedirectory=basedirectory)
+    if args.site is not None:
+        crawlsites = [args.site,]
+    else:
+        crawlsites = telescopedict
+
+    for site in crawlsites:
+        for telescope in telescopedict[site]:
+            plotlongtermtrend(site, telescope, 'rp',  args, )
+
+
+    plotallmirrormodels(args)
 
     # plotallcolorterms ()
 

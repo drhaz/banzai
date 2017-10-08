@@ -78,7 +78,7 @@ class PhotCalib():
         retCatalog['dateobs'] = testimage['SCI'].header['DATE-OBS']
         retCatalog['instrument'] = testimage['SCI'].header['INSTRUME']
         retCatalog['siteid'] = testimage['SCI'].header['SITEID']
-        retCatalog['domid'] = testimage['SCI'].header['ENCLOSUR']
+        retCatalog['domid'] = testimage['SCI'].header['ENCID']
         retCatalog['telescope'] = testimage['SCI'].header['TELID']
         retCatalog['FOCOBOFF'] = testimage['SCI'].header['FOCOBOFF']
 
@@ -570,7 +570,7 @@ def photzpmain():
         if args.site is not None:
             sites = [site for site in args.site.split(',')]
         else:
-            sites = ('lsc', 'cpt', 'ogg', 'coj', 'tfn', 'elp')
+            sites = ('lsc', 'cpt', 'ogg', 'coj', 'tfn', 'elp', 'sqa')
 
         print("Crawling through camera types ", cameras, " at sites ", sites, " for date ", args.date)
         for site in sites:
