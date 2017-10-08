@@ -9,7 +9,7 @@ import sys
 import calendar
 from astropy.io import ascii
 import astropy.time as astt
-
+import scipy.signal
 airmasscorrection = {'gp': 0.17, 'rp': 0.09, 'ip': 0.06, 'zp': 0.05, }
 
 colorterms = {}
@@ -62,14 +62,17 @@ def findUpperEnvelope(dateobs, datum, range=1, ymax=24.2):
                                   day=x[0].day, hour=12)
     enddate = x[len(x) - 1]
     while startdate < enddate:
+        # Calculate the best throughput of a day
         todayzps = y[
-            (x > startdate) & (x < startdate + datetime.timedelta(days=10)) & (
+                (x > startdate) & (x < startdate + datetime.timedelta(days=1)) & (
                 y < ymax) & (y is not np.nan)]
 
-        if len(todayzps) > 5:  # require a minium amount of data for a night
+        if len(todayzps) > 3:  # require a minimum amount of data for a night
+
             todayzps = np.sort(todayzps)[3:]
             max = np.nanmax(todayzps)
             upperEnv = np.nanmean(todayzps[todayzps > (max - stderror)])
+
             if upperEnv is not np.nan:
                 day_x.append(startdate)
                 day_y.append(upperEnv)
@@ -78,27 +81,33 @@ def findUpperEnvelope(dateobs, datum, range=1, ymax=24.2):
 
     # filter the daily zero point variation. Work in progress.
 
+    medianrange = 1
+    newday_y = np.asarray(day_y)
 
-    if len(day_y) > 0:
 
-        newday_y = [day_y[0]]
+    newday_y = scipy.signal.medfilt (day_y,5)
 
-        for y in day_y:
 
-            last = newday_y[len(newday_y) - 1]
-            correction = y - last
+    # if len(day_y) > 0:
+    #
+    #     newday_y = [day_y[0]]
+    #
+    #     for y in day_y:
+    #
+    #         last = newday_y[len(newday_y) - 1]
+    #         correction = y - last
+    #
+    #         if (np.abs(correction) < 0.1):
+    #             upd = last + 1 * correction
+    #         elif np.abs(correction) < 0.4:
+    #             upd = last + 0.2 * correction
+    #         else:
+    #             upd = last + 0.1 * correction
+    #         newday_y.append(upd)
+    # else:
+    #     newday_y = [0, 0]
 
-            if (np.abs(correction) < 0.1):
-                upd = last + 1 * correction
-            elif np.abs(correction) < 0.4:
-                upd = last + 0.2 * correction
-            else:
-                upd = last + 0.1 * correction
-            newday_y.append(upd)
-    else:
-        newday_y = [0, 0]
-
-    return np.asarray(day_x), np.asarray(newday_y[1:])
+    return np.asarray(day_x), newday_y
 
 
 def trendcorrectthroughput(datadate, datazp, modeldate, modelzp):
@@ -178,11 +187,11 @@ def plotallmirrormodels(basedirectory="/home/dharbeck/lcozpplots"):
         plt.gcf().autofmt_xdate()
         plt.plot(date, data['zp'], label=model[-11:-7])
 
-    # plt.legend()
+    plt.legend()
     plt.ylabel("phot zeropoint rp")
     plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 11, 1)])
     plt.grid(True, which='both')
-    plt.savefig("%s/allmodels.png" % basedirectory)
+    plt.savefig("%s/allmodels.png" % basedirectory, bbox_inches='tight')
     plt.close()
 
 
@@ -234,22 +243,16 @@ def plotlongtermtrend(site, enclosure=None, telescope=None, instrument=None,
 
     # find the overall trend of zeropoint variations.
     detrend = photdate = photflat = None
-    try:
-        _x, _y = findUpperEnvelope(dateselect[zpsigselect < photzpmaxnoise], zp_air[zpsigselect < photzpmaxnoise],
-                                   ymax=ymax)
 
-        outmodelfname = "%s/mirrormodel-%s-%s.dat" % (
+    _x, _y = findUpperEnvelope(dateselect[zpsigselect < photzpmaxnoise], zp_air[zpsigselect < photzpmaxnoise],
+                                   ymax=ymax)
+    outmodelfname = "%s/mirrormodel-%s-%s.dat" % (
             basedirectory, instrument, filter)
-        np.savetxt(outmodelfname, np.c_[_x, _y], header="DATE-OBS zp envelope",
+    np.savetxt(outmodelfname, np.c_[_x, _y], header="DATE-OBS zp envelope",
                    fmt="%s %f ")
 
-        detrended = _y
-        # detrended, photdate, photflag = trendcorrectthroughput(dateselect[zpsigselect<photzpmaxnoise],
-        #                                                           zp_air[zpsigselect<photzpmaxnoise], _x, _y)
-    except Exception as e:
-        detrend = None
-        _x = None
-        print("Failure while detrending!", e)
+
+
     plt.figure()
     # plt.plot (dateselect, zpselect, ".", c="grey", label="no airmass correction")
 
@@ -266,10 +269,9 @@ def plotlongtermtrend(site, enclosure=None, telescope=None, instrument=None,
 
     if _x is not None:
         plt.plot(_x, _y, "-", c='red', label='upper envelope')
-        # plt.plot(dateselect, detrended + ymax - 1.5, ".", c="cyan",
-        #          label="detrended + 23mag")
-        #
-        # plt.plot (photdate, photflag/10. + ymax - 1.5, ".", c='green', label = "photometric flag")
+
+    else:
+        print ("Mirror model failed to compute!")
 
     plt.legend()
     plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 11, 1)])
@@ -376,6 +378,7 @@ import re
 
 if __name__ == '__main__':
     plt.style.use('ggplot')
+    matplotlib.rcParams['savefig.dpi'] = 600
     basedirectory = "/home/dharbeck/lcozpplots"
     databases = [each for each in os.listdir(basedirectory) if
                  (each.endswith('.db'))]
@@ -386,8 +389,10 @@ if __name__ == '__main__':
             site = match.group(1)
             camera = match.group(2)
             for filter in ('gp', 'rp'):
-                plotlongtermtrend(site, filter=filter, instrument=camera,
-                                  basedirectory=basedirectory)
+                # if (filter == 'rp') and (camera == 'fs02'):
+                # plotlongtermtrend(site, filter=filter, instrument=camera,
+                #                    basedirectory=basedirectory)
+                pass
 
     plotallmirrormodels(basedirectory=basedirectory)
 
