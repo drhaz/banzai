@@ -1,5 +1,6 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import datetime
@@ -13,7 +14,7 @@ import glob
 import os
 from astropy.io import ascii
 
-matplotlib.use('Agg')
+
 
 airmasscorrection = {'gp': 0.17, 'rp': 0.09, 'ip': 0.06, 'zp': 0.05, }
 
@@ -22,7 +23,7 @@ telescopedict = {
     'lsc': ['doma:1m0a', 'domb:1m0a', 'domc:1m0a', 'aqwa:0m4a', 'aqwb:0m4a'],
     'coj': ['clma:2m0a', 'doma:1m0a', 'domb:1m0a', 'clma:0m4a', 'clma:0m4b'],
     'ogg': ['clma:2m0a', 'clma:0m4a', 'clma:0m4b'],
-    'elp': ['doma:1m0a'],
+    'elp': ['doma:1m0a', 'aqwa:0m4a'],
     'cpt': ['doma:1m0a', 'domb:1m0a', 'domc:1m0a'],
     'tfn': ['aqwa:0m4a', 'aqwa:0m4b'],
     'sqa': ['doma:0m8a']
