@@ -1,11 +1,6 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 import matplotlib
-
 matplotlib.use('Agg')
-from astropy.io import fits
-from astropy.wcs import WCS
-from astropy.coordinates import SkyCoord
-from astropy import units as u
 import matplotlib.pyplot as plt
 import numpy as np
 import argparse
@@ -15,6 +10,11 @@ import os
 import math
 import sys
 import logging
+from astropy.io import fits
+from astropy.wcs import WCS
+from astropy.coordinates import SkyCoord
+from astropy import units as u
+
 
 _logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ class PhotCalib():
         # Read banzai star catalog
         testimage = fits.open(image)
 
-        # Boilerplate grab of status infomration
+        # Boilerplate grab of status information
         ra = testimage['SCI'].header['CRVAL1']
         dec = testimage['SCI'].header['CRVAL2']
 
