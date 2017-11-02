@@ -114,7 +114,7 @@ def plotlongtermtrend(select_site, select_telescope, select_filter, context, ins
     cameraselect = data['camera'][selection]
     zpsigselect = data['zpsig'][selection]
 
-    ymax = 24.2  # good starting point for 2m:spectral cameras
+    ymax = 25.5  # good starting point for 2m:spectral cameras
     photzpmaxnoise = 0.2
     if select_telescope is not None:
 
@@ -152,8 +152,8 @@ def plotlongtermtrend(select_site, select_telescope, select_filter, context, ins
         print("Mirror model failed to compute. not plotting !")
 
     plt.legend()
-    plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 11, 1)])
-    plt.ylim([ymax - 2, ymax])
+    plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 12, 1)])
+    plt.ylim([ymax - 2.5, ymax])
     plt.gcf().autofmt_xdate()
     plt.xlabel("DATE-OBS")
     plt.ylabel("Photometric Zeropoint %s" % select_filter)
@@ -209,7 +209,7 @@ def plotlongtermtrend(select_site, select_telescope, select_filter, context, ins
         colorterms[select_filter] = {}
     colorterms[select_filter][instrument] = meancolorterm
 
-    plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 11, 1)])
+    plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 12, 1)])
     plt.ylim([-0.2, 0.2])
 
     plt.savefig(
@@ -357,7 +357,7 @@ def plotallmirrormodels(context, type='[2m0|1m0]'):
     plt.legend(bbox_to_anchor=(1.01, 1), loc='upper left', ncol=1)
     plt.xlabel('DATE-OBS')
     plt.ylabel("phot zeropoint %s" % myfilter)
-    plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 11, 1)])
+    plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 12, 1)])
     plt.title("Photometric zeropoint model in filter %s" % myfilter)
     plt.grid(True, which='both')
     plt.savefig("%s/allmodels_%s.png" % (context.imagedbPrefix, type), bbox_inches='tight')
