@@ -72,6 +72,7 @@ def getCombineddataByTelescope(site, telescope, context, instrument=None):
                 alldata = np.append(alldata, data)
             except Exception as e:
                 print("Failed to append data for file %s" % inputfile, e)
+                print (site, telescope, instrument, data)
 
     if alldata is None:
         return None
@@ -153,7 +154,7 @@ def plotlongtermtrend(select_site, select_telescope, select_filter, context, ins
 
     plt.legend()
     plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 12, 1)])
-    plt.ylim([ymax - 2.5, ymax])
+    plt.ylim([ymax - 3.5, ymax])
     plt.gcf().autofmt_xdate()
     plt.xlabel("DATE-OBS")
     plt.ylabel("Photometric Zeropoint %s" % select_filter)
