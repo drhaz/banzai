@@ -524,15 +524,15 @@ def parseCommandLine():
     parser = argparse.ArgumentParser(
         description='Determine photometric zeropoint of banzai-reduced LCO imaging data.')
 
-    parser.add_argument('--log_level', dest='log_level', default='INFO', choices=['DEBUG', 'INFO'],
-                        help='Set the debug level')
+    parser.add_argument('--log-level', dest='log_level', default='INFO', choices=['DEBUG', 'INFO'],
+                        help='Set the log level')
     parser.add_argument('--ps1dir', dest='ps1dir', default='~/Catalogs/ps1odi/panstarrs/',
                         help='Directory of PS1 catalog')
     parser.add_argument("--diagnosticplotsdir", dest='outputimageRootDir', default=None,
-                        help='Output directory for diagnostic photometry plots. No plots generated if option is omitted. ')
+                        help='Output directory for diagnostic photometry plots. No plots generated if option is omitted. This is a time consuming task. ')
     parser.add_argument('--imagedbPrefix', dest='imagedbPrefix', default='~/lcozpplots',
                         help='Result output directory. .db file is written here')
-    parser.add_argument('--imagerootdir', dest='rootdir', default='/nfs/archive/engineering',
+    parser.add_argument('--imagerootdir', dest='rootdir', default='/archive/engineering',
                         help="LCO archive root directory")
     parser.add_argument('--site', dest='site', default=None, help='sites code for camera')
     parser.add_argument('--date', dest='date', default=None, help='Specific date to process.')
