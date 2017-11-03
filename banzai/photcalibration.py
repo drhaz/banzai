@@ -42,7 +42,7 @@ class PhotCalib():
             pass
             # logging_tags = logs.image_config_to_tags(image, self.group_by_keywords)
 
-    def generateCrossmatchedCatalog(self, image):
+    def generateCrossmatchedCatalog(self, image, mintexp=60):
         """ Load the banzai-generated photometry catalog from  'CAT' extension, queries PS1 catalog for image FoV, and
         returns a cross-matched catalog.
 
@@ -89,7 +89,7 @@ class PhotCalib():
             return None
 
         # Check if exposure time is long enough
-        if (retCatalog['exptime'] < 60):
+        if (retCatalog['exptime'] < mintexp):
             _logger.debug("Exposure %s time is deemed too short, ignoring" % (retCatalog['exptime']))
             testimage.close()
             return None
@@ -176,13 +176,13 @@ class PhotCalib():
 
 
     def analyzeImage(self, imageName, pickle="photzp.db",
-                     outputimageRootDir=None, sqlite3cur=None):
+                     outputimageRootDir=None, sqlite3cur=None, mintexp=60):
         """ Do full photometric zeropoint analysis on an image
          """
 
         # TODO: Make this procedure thread safe so it can be accelerated a bit.
 
-        retCatalog = self.generateCrossmatchedCatalog(imageName)
+        retCatalog = self.generateCrossmatchedCatalog(imageName, mintexp=mintexp)
 
         if (retCatalog is None) or (retCatalog['instmag'] is None) or (len(retCatalog['ra']) < 10):
             _logger.debug("Not enough stars to fit %s" % (imageName,))
@@ -226,7 +226,7 @@ class PhotCalib():
             plt.figure()
             plt.plot(refmag, magZP, '.')
             plt.xlim([10, 22])
-            plt.ylim([20, 26])
+            plt.ylim([20, 31])
             plt.axhline(y=photzp, color='r', linestyle='-')
             plt.xlabel("Reference catalog mag")
             plt.ylabel("Reference Mag - Instrumnetal Mag (%s)" % (retCatalog['instfilter']))
@@ -472,7 +472,7 @@ def crawlDirectory(directory, imagedb, args):
     photzpStage = PhotCalib(args.ps1dir)
     for image in inputlist:
         image = image.rstrip()
-        photzpStage.analyzeImage(image, pickle=imagedb, outputimageRootDir=args.outputimageRootDir)
+        photzpStage.analyzeImage(image, pickle=imagedb, outputimageRootDir=args.outputimageRootDir, mintexp=args.mintexp)
 
 
 def crawlSiteCameraArchive(site, camera, args, date=None):
@@ -490,10 +490,13 @@ def crawlSiteCameraArchive(site, camera, args, date=None):
         date = '*'
 
     if site is None:
-        site = '*'
+        _logger.error ("Must define a site !")
+        exit (1)
 
     imagedb = "%s/%s-%s.db" % (args.imagedbPrefix, site, camera)
     searchdir = "%s/%s/%s/%s/processed" % (args.rootdir, site, camera, date)
+
+
     # search = "%s/%s/%s/%s/preview/*-[es]11.fits.fz" % (args.rootdir, site, camera, date)
     _logger.info("File search string is: %s" % (searchdir))
 
@@ -521,18 +524,19 @@ def parseCommandLine():
     parser = argparse.ArgumentParser(
         description='Determine photometric zeropoint of banzai-reduced LCO imaging data.')
 
-    parser.add_argument('--log_level', dest='log_level', default='INFO', choices=['DEBUG', 'INFO'],
-                        help='Set the debug level')
+    parser.add_argument('--log-level', dest='log_level', default='INFO', choices=['DEBUG', 'INFO'],
+                        help='Set the log level')
     parser.add_argument('--ps1dir', dest='ps1dir', default='~/Catalogs/ps1odi/panstarrs/',
                         help='Directory of PS1 catalog')
     parser.add_argument("--diagnosticplotsdir", dest='outputimageRootDir', default=None,
-                        help='Output directory for diagnostic photometry plots. No plots generated if option is omitted. ')
+                        help='Output directory for diagnostic photometry plots. No plots generated if option is omitted. This is a time consuming task. ')
     parser.add_argument('--imagedbPrefix', dest='imagedbPrefix', default='~/lcozpplots',
                         help='Result output directory. .db file is written here')
-    parser.add_argument('--imagerootdir', dest='rootdir', default='/nfs/archive/engineering',
+    parser.add_argument('--imagerootdir', dest='rootdir', default='/archive/engineering',
                         help="LCO archive root directory")
     parser.add_argument('--site', dest='site', default=None, help='sites code for camera')
     parser.add_argument('--date', dest='date', default=None, help='Specific date to process.')
+    parser.add_argument('--mintexp', dest='mintexp', default=60, type=float,  help='Minimum exposure time to accept')
 
     cameragroup = parser.add_mutually_exclusive_group()
 
@@ -551,6 +555,7 @@ def parseCommandLine():
 
     if args.outputimageRootDir is not None:
         args.outputimageRootDir = os.path.expanduser(args.outputimageRootDir)
+        print ("Writing db to directory: %s" %  args.outputimageRootDir)
 
     if args.crawldirectory is not None:
         args.crawldirectory = os.path.expanduser(args.crawldirectory)
