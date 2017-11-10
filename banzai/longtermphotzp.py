@@ -1,3 +1,4 @@
+
 from __future__ import absolute_import, division, print_function, unicode_literals
 import matplotlib
 matplotlib.use('Agg')
@@ -14,6 +15,7 @@ import glob
 import os
 from astropy.io import ascii
 
+assert sys.version_info >= (3,5)
 
 
 airmasscorrection = {'gp': 0.17, 'rp': 0.09, 'ip': 0.06, 'zp': 0.05, }
@@ -335,7 +337,7 @@ def trendcorrectthroughput(datadate, datazp, modeldate, modelzp):
     return corrected, day_x, day_y
 
 
-def plotallmirrormodels(context, type='[2m0|1m0]', range=[22.5,25.5]):
+def plotallmirrormodels(context, type='[2m0a|1m0a]', range=[22.5,25.5]):
     import glob
 
     myfilter = 'rp'
