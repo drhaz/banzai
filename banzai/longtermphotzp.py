@@ -4,6 +4,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
+import math
 import datetime
 import sys
 import calendar
@@ -19,6 +20,9 @@ assert sys.version_info >= (3,5)
 
 
 airmasscorrection = {'gp': 0.17, 'rp': 0.09, 'ip': 0.06, 'zp': 0.05, }
+
+starttime = datetime.datetime(2016, 1, 1)
+endtime   = datetime.datetime(2017, 12, 31)
 
 colorterms = {}
 telescopedict = {
@@ -43,6 +47,13 @@ def readDataFile(inputfile):
                                            'zp', 'colorterm', 'zpsig'], )
 
         data['dateobs'] = astt.Time(data['dateobs'], scale='utc', format='isot').to_datetime()
+
+        if 'fl06' in inputfile:
+            # fl06 was misconfigured with a wrong gain, which trickles down through the banzai processing.
+            # The correct gain was validated Nov 27th 2017 on existing data.
+            dateselect = data['dateobs'] < datetime.datetime(year=2017,month=11,day=17)
+            data['zp'][dateselect] = data['zp'][dateselect] - 2.5 * math.log10 (1.82 / 2.45)
+
 
         return data
 
@@ -155,7 +166,7 @@ def plotlongtermtrend(select_site, select_telescope, select_filter, context, ins
         print("Mirror model failed to compute. not plotting !")
 
     plt.legend()
-    plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 12, 1)])
+    plt.xlim([starttime, endtime])
     plt.ylim([ymax - 3.5, ymax])
     plt.gcf().autofmt_xdate()
     plt.xlabel("DATE-OBS")
@@ -212,7 +223,7 @@ def plotlongtermtrend(select_site, select_telescope, select_filter, context, ins
         colorterms[select_filter] = {}
     colorterms[select_filter][instrument] = meancolorterm
 
-    plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 12, 1)])
+    plt.xlim([starttime, endtime])
     plt.ylim([-0.2, 0.2])
 
     plt.savefig(
@@ -360,7 +371,7 @@ def plotallmirrormodels(context, type='[2m0a|1m0a]', range=[22.5,25.5]):
     plt.legend(bbox_to_anchor=(1.01, 1), loc='upper left', ncol=1)
     plt.xlabel('DATE-OBS')
     plt.ylabel("phot zeropoint %s" % myfilter)
-    plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 12, 1)])
+    plt.xlim([starttime, endtime])
     plt.ylim(range)
     plt.title("Photometric zeropoint model in filter %s" % myfilter)
     plt.grid(True, which='both')
