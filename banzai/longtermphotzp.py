@@ -1,8 +1,10 @@
+
 from __future__ import absolute_import, division, print_function, unicode_literals
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
+import math
 import datetime
 import sys
 import calendar
@@ -14,19 +16,23 @@ import glob
 import os
 from astropy.io import ascii
 
+assert sys.version_info >= (3,5)
 
 
 airmasscorrection = {'gp': 0.17, 'rp': 0.09, 'ip': 0.06, 'zp': 0.05, }
 
+starttime = datetime.datetime(2016, 1, 1)
+endtime   = datetime.datetime(2017, 12, 31)
+
 colorterms = {}
 telescopedict = {
-    'lsc': ['doma:1m0a', 'domb:1m0a', 'domc:1m0a', 'aqwa:0m4a', 'aqwb:0m4a'],
-    'coj': ['clma:2m0a', 'doma:1m0a', 'domb:1m0a', 'clma:0m4a', 'clma:0m4b'],
-    'ogg': ['clma:2m0a', 'clma:0m4a', 'clma:0m4b'],
-    'elp': ['doma:1m0a', 'aqwa:0m4a'],
-    'cpt': ['doma:1m0a', 'domb:1m0a', 'domc:1m0a'],
-    'tfn': ['aqwa:0m4a', 'aqwa:0m4b'],
-    'sqa': ['doma:0m8a']
+    'lsc': ['doma-1m0a', 'domb-1m0a', 'domc-1m0a', 'aqwa-0m4a', 'aqwb-0m4a'],
+    'coj': ['clma-2m0a', 'doma-1m0a', 'domb-1m0a', 'clma-0m4a', 'clma-0m4b'],
+    'ogg': ['clma-2m0a', 'clma-0m4a', 'clma-0m4b'],
+    'elp': ['doma-1m0a', 'aqwa-0m4a'],
+    'cpt': ['doma-1m0a', 'domb-1m0a', 'domc-1m0a'],
+    'tfn': ['aqwa-0m4a', 'aqwa-0m4b'],
+    'sqa': ['doma-0m8a']
 }
 
 
@@ -41,6 +47,13 @@ def readDataFile(inputfile):
                                            'zp', 'colorterm', 'zpsig'], )
 
         data['dateobs'] = astt.Time(data['dateobs'], scale='utc', format='isot').to_datetime()
+
+        if 'fl06' in inputfile:
+            # fl06 was misconfigured with a wrong gain, which trickles down through the banzai processing.
+            # The correct gain was validated Nov 27th 2017 on existing data.
+            dateselect = data['dateobs'] < datetime.datetime(year=2017,month=11,day=17)
+            data['zp'][dateselect] = data['zp'][dateselect] - 2.5 * math.log10 (1.82 / 2.45)
+
 
         return data
 
@@ -72,6 +85,7 @@ def getCombineddataByTelescope(site, telescope, context, instrument=None):
                 alldata = np.append(alldata, data)
             except Exception as e:
                 print("Failed to append data for file %s" % inputfile, e)
+                print (site, telescope, instrument, data)
 
     if alldata is None:
         return None
@@ -82,7 +96,7 @@ def getCombineddataByTelescope(site, telescope, context, instrument=None):
     #     teldict = np.unique(alldata [ alldata['dome'] == dome] ['telescope'])
     #     print (site, dome, teldict)
 
-    dome, tel = telescope.split(':')
+    dome, tel = telescope.split('-')
     selection = (alldata['dome'] == dome) & (alldata['telescope'] == tel)
     alldata = alldata[selection]
     return alldata
@@ -152,8 +166,8 @@ def plotlongtermtrend(select_site, select_telescope, select_filter, context, ins
         print("Mirror model failed to compute. not plotting !")
 
     plt.legend()
-    plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 12, 1)])
-    plt.ylim([ymax - 2.5, ymax])
+    plt.xlim([starttime, endtime])
+    plt.ylim([ymax - 3.5, ymax])
     plt.gcf().autofmt_xdate()
     plt.xlabel("DATE-OBS")
     plt.ylabel("Photometric Zeropoint %s" % select_filter)
@@ -209,7 +223,7 @@ def plotlongtermtrend(select_site, select_telescope, select_filter, context, ins
         colorterms[select_filter] = {}
     colorterms[select_filter][instrument] = meancolorterm
 
-    plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 12, 1)])
+    plt.xlim([starttime, endtime])
     plt.ylim([-0.2, 0.2])
 
     plt.savefig(
@@ -334,7 +348,7 @@ def trendcorrectthroughput(datadate, datazp, modeldate, modelzp):
     return corrected, day_x, day_y
 
 
-def plotallmirrormodels(context, type='[2m0|1m0]'):
+def plotallmirrormodels(context, type='[2m0a|1m0a]', range=[22.5,25.5]):
     import glob
 
     myfilter = 'rp'
@@ -352,12 +366,13 @@ def plotallmirrormodels(context, type='[2m0|1m0]'):
             continue
 
         plt.gcf().autofmt_xdate()
-        plt.plot(date, data['zp'], label=model[-20:-8].replace('-', ':'))
+        plt.plot(date, data['zp'], label=model[-20:-7].replace('-', ':'))
 
     plt.legend(bbox_to_anchor=(1.01, 1), loc='upper left', ncol=1)
     plt.xlabel('DATE-OBS')
     plt.ylabel("phot zeropoint %s" % myfilter)
-    plt.xlim([datetime.datetime(2016, 1, 1), datetime.datetime(2017, 12, 1)])
+    plt.xlim([starttime, endtime])
+    plt.ylim(range)
     plt.title("Photometric zeropoint model in filter %s" % myfilter)
     plt.grid(True, which='both')
     plt.savefig("%s/allmodels_%s.png" % (context.imagedbPrefix, type), bbox_inches='tight')
@@ -378,7 +393,7 @@ def parseCommandLine():
                         help='Directory containing photometryc databases')
     parser.add_argument('--site', dest='site', default=None, help='sites code for camera')
     parser.add_argument('--telescope', default=None,
-                        help='Telescope id. written inform enclosure:telescope, e.g., "domb:1m0a"')
+                        help='Telescope id. written inform enclosure-telescope, e.g., "domb-1m0a"')
     parser.add_argument('--filter', default='rp', help='Which filter to process.', choices=['gp', 'rp', 'ip', 'zp'])
 
     args = parser.parse_args()
@@ -414,6 +429,6 @@ if __name__ == '__main__':
             plotlongtermtrend(site, telescope, args.filter, args, )
 
     plotallmirrormodels(args)
-    plotallmirrormodels(args, type='0m4')
+    plotallmirrormodels(args, type='0m4', range=[20,23])
 
     sys.exit(0)

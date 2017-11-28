@@ -605,4 +605,5 @@ def photzpmain():
 
 
 if __name__ == '__main__':
+    assert sys.version_info >= (3,5)
     photzpmain()
