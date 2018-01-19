@@ -1,4 +1,3 @@
-
 from __future__ import absolute_import, division, print_function, unicode_literals
 import matplotlib
 matplotlib.use('Agg')
@@ -22,7 +21,7 @@ assert sys.version_info >= (3,5)
 airmasscorrection = {'gp': 0.17, 'rp': 0.09, 'ip': 0.06, 'zp': 0.05, }
 
 starttime = datetime.datetime(2016, 1, 1)
-endtime   = datetime.datetime(2017, 12, 31)
+endtime   = datetime.datetime(2018, 2, 28)
 
 colorterms = {}
 telescopedict = {
