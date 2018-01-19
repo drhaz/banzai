@@ -351,7 +351,7 @@ def trendcorrectthroughput(datadate, datazp, modeldate, modelzp):
 def plotallmirrormodels(context, type='[2m0a|1m0a]', range=[22.5,25.5]):
     import glob
 
-    myfilter = 'rp'
+    myfilter = context.filter
     modellist = glob.glob("%s/mirrormodel*%s[abc]-%s.dat" % (context.imagedbPrefix, type, myfilter))
 
     for model in modellist:
@@ -375,7 +375,7 @@ def plotallmirrormodels(context, type='[2m0a|1m0a]', range=[22.5,25.5]):
     plt.ylim(range)
     plt.title("Photometric zeropoint model in filter %s" % myfilter)
     plt.grid(True, which='both')
-    plt.savefig("%s/allmodels_%s.png" % (context.imagedbPrefix, type), bbox_inches='tight')
+    plt.savefig("%s/allmodels_%s_%s.png" % (context.imagedbPrefix, type, context.filter), bbox_inches='tight')
     plt.close()
 
 
