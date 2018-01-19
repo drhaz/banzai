@@ -524,6 +524,7 @@ def parseCommandLine():
     parser = argparse.ArgumentParser(
         description='Determine photometric zeropoint of banzai-reduced LCO imaging data.')
 
+
     parser.add_argument('--log-level', dest='log_level', default='INFO', choices=['DEBUG', 'INFO'],
                         help='Set the log level')
     parser.add_argument('--ps1dir', dest='ps1dir', default='~/Catalogs/ps1odi/panstarrs/',
