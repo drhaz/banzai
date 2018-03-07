@@ -118,6 +118,8 @@ class photdbinterface:
         self.cursor.execute(query, args)
 
         allrows = np.asarray(self.cursor.fetchall())
+        if len (allrows) == 0:
+            return None
 
         t = Table (allrows, names = ['name','dateobs','site','dome','telescope','camera','filter','airmass','zp','colorterm','zpsig'])
         t['dateobs'] = t['dateobs'].astype (str)
@@ -126,6 +128,19 @@ class photdbinterface:
         t['airmass'] = t['airmass'].astype(float)
         t['zpsig'] = t['zpsig'].astype(float)
         t['colorterm'] = t['colorterm'].astype(float)
+
+
+        if 'fl06' in t['camera']:
+            # fl06 was misconfigured with a wrong gain, which trickles down through the banzai processing.
+            # The correct gain was validated Nov 27th 2017 on existing data.
+            dateselect = ( t['dateobs'] < datetime.datetime(year=2017,month=11,day=17) ) & (t['camera'] == 'fl06')
+            t['zp'][dateselect] = t['zp'][dateselect] - 2.5 * math.log10 (1.82 / 2.45)
+
+        if 'fl11' in  t['camera']:
+            #
+            dateselect =  (t['camera'] == 'fl11')
+            t['zp'][dateselect] = t['zp'][dateselect] - 2.5 * math.log10 (1.85 / 2.16)
+
         print (t)
         return t
 
