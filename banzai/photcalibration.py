@@ -1,5 +1,8 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
+#from __future__ import absolute_import, division, print_function, unicode_literals
 import matplotlib
+
+from longtermphotzp import photdbinterface
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,7 +17,6 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord
 from astropy import units as u
-
 
 _logger = logging.getLogger(__name__)
 
@@ -175,8 +177,8 @@ class PhotCalib():
         return data[abs(data - np.median(data)) < m * std]
 
 
-    def analyzeImage(self, imageName, pickle="photzp.db",
-                     outputimageRootDir=None, sqlite3cur=None, mintexp=60):
+    def analyzeImage(self, imageName, outputdb= None,
+                     outputimageRootDir=None,  mintexp=60):
         """ Do full photometric zeropoint analysis on an image
          """
 
@@ -250,15 +252,22 @@ class PhotCalib():
 
 
 
+
+
         # TODO: Make this thread safe, e.g., write to transactional database, or return values for storing externally.
-        with open(pickle, 'a') as f:
-            output = "%s %s %s %s %s %s %s %s % 6.3f  % 6.3f  % 6.3f\n" % (
-                imageName, retCatalog['dateobs'], retCatalog['siteid'], retCatalog['domid'],
-                retCatalog['telescope'], retCatalog['instrument'], retCatalog['instfilter'],
-                retCatalog['airmass'], photzp, colorterm, photzpsig)
-            _logger.info(output)
-            f.write(output)
-            f.close()
+
+        if outputdb is not None:
+            outputdb.addphotzp ( (imageName, retCatalog['dateobs'].replace('T', ' '), retCatalog['siteid'], retCatalog['domid'],
+                                 retCatalog['telescope'], retCatalog['instrument'], retCatalog['instfilter'],
+                                 retCatalog['airmass'], photzp, colorterm, photzpsig))
+        # with open(pickle, 'a') as f:
+        #     output = "%s %s %s %s %s %s %s %s % 6.3f  % 6.3f  % 6.3f\n" % (
+        #         imageName, retCatalog['dateobs'], retCatalog['siteid'], retCatalog['domid'],
+        #         retCatalog['telescope'], retCatalog['instrument'], retCatalog['instfilter'],
+        #         retCatalog['airmass'], photzp, colorterm, photzpsig)
+        #     _logger.info(output)
+        #     f.write(output)
+        #     f.close()
 
         return photzp
 
@@ -462,17 +471,29 @@ class PS1IPP:
 
 #### Wrapper routines to use photometric zeropointing stand-alone
 
-def crawlDirectory(directory, imagedb, args):
+def crawlDirectory(directory, db, args):
+
+
     search = "%s/*-[es]91.fits.fz" % (directory)
     inputlist = glob.glob(search)
     _logger.debug("Found %d entries. Cleaning duplicate entries..." % len(inputlist))
+
+    rejects = []
+    for image in inputlist:
+       if db.exists(image):
+           rejects.append (image)
+
+    print ("Removing %d rejects: "  % len(rejects))
+    for r in rejects:
+        inputlist.remove (r)
+
     # TODO: Do not lie, and actually do clean for duplicate entries!
-    _logger.debug("Starting analysis")
+    print ("Starting analysis of %d files" % (len(inputlist)))
 
     photzpStage = PhotCalib(args.ps1dir)
     for image in inputlist:
         image = image.rstrip()
-        photzpStage.analyzeImage(image, pickle=imagedb, outputimageRootDir=args.outputimageRootDir, mintexp=args.mintexp)
+        photzpStage.analyzeImage(image, outputdb=db, outputimageRootDir=args.outputimageRootDir, mintexp=args.mintexp)
 
 
 def crawlSiteCameraArchive(site, camera, args, date=None):
@@ -493,7 +514,8 @@ def crawlSiteCameraArchive(site, camera, args, date=None):
         _logger.error ("Must define a site !")
         exit (1)
 
-    imagedb = "%s/%s-%s.db" % (args.imagedbPrefix, site, camera)
+    imagedb = photdbinterface(args.imagedbPrefix)
+
     searchdir = "%s/%s/%s/%s/processed" % (args.rootdir, site, camera, date)
 
 
@@ -501,6 +523,7 @@ def crawlSiteCameraArchive(site, camera, args, date=None):
     _logger.info("File search string is: %s" % (searchdir))
 
     crawlDirectory(searchdir, imagedb, args)
+    imagedb.close();
 
 
 def crawlSite(site, type, args):
@@ -531,7 +554,7 @@ def parseCommandLine():
                         help='Directory of PS1 catalog')
     parser.add_argument("--diagnosticplotsdir", dest='outputimageRootDir', default=None,
                         help='Output directory for diagnostic photometry plots. No plots generated if option is omitted. This is a time consuming task. ')
-    parser.add_argument('--imagedbPrefix', dest='imagedbPrefix', default='~/lcozpplots',
+    parser.add_argument('--photodb', dest='imagedbPrefix', default='~/lcozpplots/sqlite.db',
                         help='Result output directory. .db file is written here')
     parser.add_argument('--imagerootdir', dest='rootdir', default='/archive/engineering',
                         help="LCO archive root directory")
@@ -595,9 +618,10 @@ def photzpmain():
 
 
     elif args.crawldirectory is not None:
-        imagedb = "%s/%s" % (args.crawldirectory, 'imagezp.db')
+        imagedb = photdbinterface("%s/%s" % (args.crawldirectory, 'imagezp.db'))
 
         crawlDirectory(args.crawldirectory, imagedb, args)
+        imagedb.close()
 
     else:
         print("Need to specify either a camera, or a camera type.")

@@ -18,6 +18,8 @@ from astropy.io import ascii
 from astropy.table import Table
 
 assert sys.version_info >= (3,5)
+_logger = logging.getLogger(__name__)
+
 
 
 airmasscorrection = {'gp': 0.17, 'rp': 0.09, 'ip': 0.06, 'zp': 0.05, }
@@ -55,6 +57,7 @@ class photdbinterface:
 
 
     def __init__(self, fname):
+        _logger.info ("Open data base file %s" % (fname))
         self.sqlite_file = fname
         self.conn = sqlite3.connect(self.sqlite_file)
         self.cursor  = self.conn.cursor()
@@ -64,19 +67,16 @@ class photdbinterface:
 
     def addphotzp (self, datablob, commit = True) :
 
+        _logger.debug ("About to insert: \n %s" % str(datablob))
 
-        if self.exists(datablob['name']):
-            pass
+        self.cursor.execute ("insert or replace into lcophot values (?,?,?,?,?,?,?,?,?,?,?)", datablob)
 
-        else:
-            self.cursor.execute ("insert or replace into lcophot values (?,?,?,?,?,?,?,?,?,?,?)", datablob)
-
-            if (commit):
-                self.conn.commit()
+        if (commit):
+            self.conn.commit()
 
 
     def exists(self, fname):
-        print ("Check if " + fname + " exists")
+        #print ("Check if " + fname + " exists")
         check = self.cursor.execute ("select * from lcophot where name=? limit 1", (fname,))
         res = self.cursor.fetchone()
         if res is None:
@@ -84,11 +84,8 @@ class photdbinterface:
         return (len (res) > 0)
 
 
-
-
-
-
     def readoldfile (self, oldname):
+        """ Ingest a legacy ascii photomerty zeropoint file."""
         data = readDataFile(oldname, False)
 
         for line in data:
@@ -123,7 +120,7 @@ class photdbinterface:
 
         t = Table (allrows, names = ['name','dateobs','site','dome','telescope','camera','filter','airmass','zp','colorterm','zpsig'])
         t['dateobs'] = t['dateobs'].astype (str)
-        t['dateobs'] = astt.Time(t['dateobs'], scale='utc', format='iso').to_datetime()
+        t['dateobs'] = astt.Time(t['dateobs'], scale='utc', format=None).to_datetime()
         t['zp'] = t['zp'].astype(float)
         t['airmass'] = t['airmass'].astype(float)
         t['zpsig'] = t['zpsig'].astype(float)
@@ -141,7 +138,6 @@ class photdbinterface:
             dateselect =  (t['camera'] == 'fl11')
             t['zp'][dateselect] = t['zp'][dateselect] - 2.5 * math.log10 (1.85 / 2.16)
 
-        print (t)
         return t
 
 
@@ -188,7 +184,7 @@ def getCombineddataByTelescope(site, telescope, context, instrument=None):
     :return: concatenated data for a site / tel / isntrument selection.
     """
 
-    db = photdbinterface("/home/dharbeck/lcozpplots/sqlite.db")
+    db = photdbinterface(context.database)
     print (site,telescope,instrument)
     dome, tel = telescope.split ("-")
 
@@ -515,8 +511,9 @@ def parseCommandLine():
     parser.add_argument('--log_level', dest='log_level', default='INFO', choices=['DEBUG', 'INFO'],
                         help='Set the debug level')
 
-    parser.add_argument('--databasedirectory', dest='imagedbPrefix', default='~/lcozpplots',
+    parser.add_argument('--outputdirectory', dest='imagedbPrefix', default='~/lcozpplots',
                         help='Directory containing photometryc databases')
+    parser.add_argument('--database', default = '~/lcozpplots/sqlite.db')
     parser.add_argument('--site', dest='site', default=None, help='sites code for camera')
     parser.add_argument('--telescope', default=None,
                         help='Telescope id. written inform enclosure-telescope, e.g., "domb-1m0a"')
@@ -532,6 +529,8 @@ def parseCommandLine():
                         format='%(asctime)s.%(msecs).03d %(levelname)7s: %(module)20s: %(message)s')
 
     args.imagedbPrefix = os.path.expanduser(args.imagedbPrefix)
+    args.database = os.path.expanduser(args.database)
+
 
     return args
 
@@ -544,7 +543,7 @@ if __name__ == '__main__':
 
 
     if (args.testdb):
-        db = photdbinterface("/home/dharbeck/lcozpplots/sqlite.db")
+        db = photdbinterface(args.database)
         db.readRecords()
         db.close()
         exit()
@@ -552,7 +551,7 @@ if __name__ == '__main__':
 
     if (args.importold):
         print ("testing db interface")
-        db = photdbinterface("/home/dharbeck/lcozpplots/sqlite.db")
+        db = photdbinterface(args.database)
         dbfiles = glob.glob ("/home/dharbeck/lcozpplots/???-*.db")
         for dbfile in dbfiles:
 
