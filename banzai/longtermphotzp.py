@@ -67,7 +67,7 @@ class photdbinterface:
 
     def addphotzp (self, datablob, commit = True) :
 
-        _logger.debug ("About to insert: \n %s" % str(datablob))
+        _logger.info ("About to insert: %s" % str(datablob))
 
         self.cursor.execute ("insert or replace into lcophot values (?,?,?,?,?,?,?,?,?,?,?)", datablob)
 

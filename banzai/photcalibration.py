@@ -86,19 +86,19 @@ class PhotCalib():
 
         # Check if filter is supported
         if retCatalog['instfilter'] not in self.ps1catalog.FILTERMAPPING:
-            _logger.debug("Filter %s not viable for photometric calibration. Sorry" % (retCatalog['instfilter']))
+            _logger.debug("%s - Filter %s not viable for photometric calibration. Sorry" % (image, retCatalog['instfilter']))
             testimage.close()
             return None
 
         # Check if exposure time is long enough
         if (retCatalog['exptime'] < mintexp):
-            _logger.debug("Exposure %s time is deemed too short, ignoring" % (retCatalog['exptime']))
+            _logger.debug("%s - Exposure %s time is deemed too short, ignoring" % (image, retCatalog['exptime']))
             testimage.close()
             return None
 
         # verify there is no deliberate defocus
         if (retCatalog['FOCOBOFF'] is not None) and (retCatalog['FOCOBOFF'] != 0):
-            _logger.debug("Exposure is deliberately defocussed by %s, ignoring" % (retCatalog['FOCOBOFF']))
+            _logger.debug("%s - Exposure is deliberately defocussed by %s, ignoring" % (image, retCatalog['FOCOBOFF']))
             testimage.close()
             return None
 
@@ -110,7 +110,7 @@ class PhotCalib():
         try:
             instCatalog = testimage['CAT'].data
         except:
-            _logger.error("No extension \'CAT\' available for image %s, skipping." % (image))
+            _logger.warning("%s - No extension \'CAT\' available, skipping." % (image))
             testimage.close()
             return None
 
@@ -121,7 +121,7 @@ class PhotCalib():
         try:
             ras, decs = image_wcs.all_pix2world(instCatalog['x'], instCatalog['y'], 1)
         except:
-            _logger.error("Failed to convert images coordinates to world coordinates. Giving up on file.")
+            _logger.error("%s: Failed to convert images coordinates to world coordinates. Giving up on file." % (image))
             testimage.close()
             return None
 
@@ -131,7 +131,7 @@ class PhotCalib():
         # Query reference catalog TODO: paramterize FoV of query!
         refcatalog = self.ps1catalog.get_reference_catalog(ra, dec, 0.25)
         if refcatalog is None:
-            _logger.warning("Failure on image %s, no reference catalog received." % image)
+            _logger.warning("%s, no reference catalog received." % image)
             return None
 
         # Start the catalog matching, using astropy skycoords built-in functions.
@@ -187,7 +187,12 @@ class PhotCalib():
         retCatalog = self.generateCrossmatchedCatalog(imageName, mintexp=mintexp)
 
         if (retCatalog is None) or (retCatalog['instmag'] is None) or (len(retCatalog['ra']) < 10):
-            _logger.debug("Not enough stars to fit %s" % (imageName,))
+            if retCatalog is None:
+               return
+
+
+            if len(retCatalog['ra']) < 10:
+                _logger.info ("%s: Catalog returned, but is has less than 10 stars. Ignoring. " % (imageName))
             return
 
         # calculate the per star zeropoint
@@ -260,6 +265,8 @@ class PhotCalib():
             outputdb.addphotzp ( (imageName, retCatalog['dateobs'].replace('T', ' '), retCatalog['siteid'], retCatalog['domid'],
                                  retCatalog['telescope'], retCatalog['instrument'], retCatalog['instfilter'],
                                  retCatalog['airmass'], photzp, colorterm, photzpsig))
+        else:
+            _logger.info ("Not safing output for image %s " % imageName)
         # with open(pickle, 'a') as f:
         #     output = "%s %s %s %s %s %s %s %s % 6.3f  % 6.3f  % 6.3f\n" % (
         #         imageName, retCatalog['dateobs'], retCatalog['siteid'], retCatalog['domid'],
@@ -476,19 +483,19 @@ def crawlDirectory(directory, db, args):
 
     search = "%s/*-[es]91.fits.fz" % (directory)
     inputlist = glob.glob(search)
-    _logger.debug("Found %d entries. Cleaning duplicate entries..." % len(inputlist))
+    initialsize = len (inputlist)
+
 
     rejects = []
     for image in inputlist:
        if db.exists(image):
            rejects.append (image)
 
-    print ("Removing %d rejects: "  % len(rejects))
     for r in rejects:
         inputlist.remove (r)
 
-    # TODO: Do not lie, and actually do clean for duplicate entries!
-    print ("Starting analysis of %d files" % (len(inputlist)))
+
+    print ("Found %d files intially, but cleaned %d already measured images. Starting analysis of %d files" % (initialsize, len(rejects), len(inputlist)))
 
     photzpStage = PhotCalib(args.ps1dir)
     for image in inputlist:
