@@ -60,25 +60,26 @@ class photdbinterface:
         _logger.info ("Open data base file %s" % (fname))
         self.sqlite_file = fname
         self.conn = sqlite3.connect(self.sqlite_file)
-        self.cursor  = self.conn.cursor()
-
-        self.cursor.execute(self.createstatement)
+        self.conn.execute(self.createstatement)
         self.conn.commit()
 
     def addphotzp (self, datablob, commit = True) :
 
         _logger.info ("About to insert: %s" % str(datablob))
 
-        self.cursor.execute ("insert or replace into lcophot values (?,?,?,?,?,?,?,?,?,?,?)", datablob)
+        with self.conn:
+            self.conn.execute ("insert or replace into lcophot values (?,?,?,?,?,?,?,?,?,?,?)", datablob)
 
-        if (commit):
-            self.conn.commit()
+            if (commit):
+                self.conn.commit()
 
 
     def exists(self, fname):
-        #print ("Check if " + fname + " exists")
-        check = self.cursor.execute ("select * from lcophot where name=? limit 1", (fname,))
-        res = self.cursor.fetchone()
+        """ Check if entry as identified by file name already exists in database
+        """
+
+        cursor = self.conn.execute ("select * from lcophot where name=? limit 1", (fname,))
+        res = cursor.fetchone()
         if res is None:
             return False
         return (len (res) > 0)
@@ -86,6 +87,7 @@ class photdbinterface:
 
     def readoldfile (self, oldname):
         """ Ingest a legacy ascii photomerty zeropoint file."""
+        _logger.info ("Ingesting old style ascii datgabase : %s" % (oldname))
         data = readDataFile(oldname, False)
 
         for line in data:
@@ -95,13 +97,17 @@ class photdbinterface:
 
 
     def close(self):
-        self.conn.commit()
+        """ Clode the database safely"""
 
+        _logger.info ("Closing data base file %s " % (self.sqlite_file))
+        self.conn.commit()
         self.conn.close()
 
+
     def readRecords (self, site = None, dome = None, telescope = None, camera = None):
+        """  Read the photometry records fromt eh database, optionally filtered by site, dome, telescope, and camera.
 
-
+        """
 
 
         query = "select name,dateobs,site,dome,telescope,camera,filter,airmass,zp,colorterm,zpsig from lcophot " \
@@ -112,9 +118,9 @@ class photdbinterface:
                 telescope if telescope is not None else '%',
                 camera if camera is not None else '%',)
 
-        self.cursor.execute(query, args)
+        cursor = self.conn.execute(query, args)
 
-        allrows = np.asarray(self.cursor.fetchall())
+        allrows = np.asarray(cursor.fetchall())
         if len (allrows) == 0:
             return None
 
