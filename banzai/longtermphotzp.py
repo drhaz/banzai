@@ -13,7 +13,9 @@ import argparse
 import logging
 import glob
 import os
+import sqlite3
 from astropy.io import ascii
+from astropy.table import Table
 
 assert sys.version_info >= (3,5)
 
@@ -21,7 +23,7 @@ assert sys.version_info >= (3,5)
 airmasscorrection = {'gp': 0.17, 'rp': 0.09, 'ip': 0.06, 'zp': 0.05, }
 
 starttime = datetime.datetime(2016, 1, 1)
-endtime   = datetime.datetime(2018, 2, 28)
+endtime   = datetime.datetime(2018, 4, 28)
 
 colorterms = {}
 telescopedict = {
@@ -35,7 +37,102 @@ telescopedict = {
 }
 
 
-def readDataFile(inputfile):
+class photdbinterface:
+
+    createstatement = "CREATE TABLE IF NOT EXISTS lcophot (" \
+                      "name TEXT PRIMARY KEY, " \
+                      "dateobs text," \
+                      " site text," \
+                      " dome text," \
+                      " telescope text," \
+                      " camera text," \
+                      " filter text," \
+                      " airmass real," \
+                      " zp real," \
+                      " colorterm real," \
+                      " zpsig real)"
+
+
+
+    def __init__(self, fname):
+        self.sqlite_file = fname
+        self.conn = sqlite3.connect(self.sqlite_file)
+        self.cursor  = self.conn.cursor()
+
+        self.cursor.execute(self.createstatement)
+        self.conn.commit()
+
+    def addphotzp (self, datablob, commit = True) :
+
+
+        if self.exists(datablob['name']):
+            pass
+
+        else:
+            self.cursor.execute ("insert or replace into lcophot values (?,?,?,?,?,?,?,?,?,?,?)", datablob)
+
+            if (commit):
+                self.conn.commit()
+
+
+    def exists(self, fname):
+        print ("Check if " + fname + " exists")
+        check = self.cursor.execute ("select * from lcophot where name=? limit 1", (fname,))
+        res = self.cursor.fetchone()
+        if res is None:
+            return False
+        return (len (res) > 0)
+
+
+
+
+
+
+    def readoldfile (self, oldname):
+        data = readDataFile(oldname, False)
+
+        for line in data:
+            print (line)
+            self.addphotzp(line, commit = False)
+        self.conn.commit()
+
+
+    def close(self):
+        self.conn.commit()
+
+        self.conn.close()
+
+    def readRecords (self, site = None, dome = None, telescope = None, camera = None):
+
+
+
+
+        query = "select name,dateobs,site,dome,telescope,camera,filter,airmass,zp,colorterm,zpsig from lcophot " \
+                "where (site like ? AND dome like ? AND telescope like ? AND camera like ?)"
+
+        args = (site if site is not None else '%',
+                dome if dome is not None else '%',
+                telescope if telescope is not None else '%',
+                camera if camera is not None else '%',)
+
+        self.cursor.execute(query, args)
+
+        allrows = np.asarray(self.cursor.fetchall())
+
+        t = Table (allrows, names = ['name','dateobs','site','dome','telescope','camera','filter','airmass','zp','colorterm','zpsig'])
+        t['dateobs'] = t['dateobs'].astype (str)
+        t['dateobs'] = astt.Time(t['dateobs'], scale='utc', format='iso').to_datetime()
+        t['zp'] = t['zp'].astype(float)
+        t['airmass'] = t['airmass'].astype(float)
+        t['zpsig'] = t['zpsig'].astype(float)
+        t['colorterm'] = t['colorterm'].astype(float)
+        print (t)
+        return t
+
+
+def readDataFile(inputfile, gaincorrect = True):
+    print ("DEPRECATED!")
+    exit (0)
     with open(inputfile, 'r') as file:
         contents = file.read()
         file.close()
@@ -47,12 +144,19 @@ def readDataFile(inputfile):
 
         data['dateobs'] = astt.Time(data['dateobs'], scale='utc', format='isot').to_datetime()
 
+        if not gaincorrect:
+            return data
+
         if 'fl06' in inputfile:
             # fl06 was misconfigured with a wrong gain, which trickles down through the banzai processing.
             # The correct gain was validated Nov 27th 2017 on existing data.
             dateselect = data['dateobs'] < datetime.datetime(year=2017,month=11,day=17)
             data['zp'][dateselect] = data['zp'][dateselect] - 2.5 * math.log10 (1.82 / 2.45)
 
+        if 'fl11' in inputfile:
+            # fl06 was misconfigured with a wrong gain, which trickles down through the banzai processing.
+            # The correct gain was validated Nov 27th 2017 on existing data.
+            data['zp'] = data['zp'] - 2.5 * math.log10 (1.85 / 2.16)
 
         return data
 
@@ -68,6 +172,14 @@ def getCombineddataByTelescope(site, telescope, context, instrument=None):
     :param instrument:
     :return: concatenated data for a site / tel / isntrument selection.
     """
+
+    db = photdbinterface("/home/dharbeck/lcozpplots/sqlite.db")
+    print (site,telescope,instrument)
+    dome, tel = telescope.split ("-")
+
+
+    return db.readRecords(site,dome,tel,instrument)
+
 
     inputfiles = glob.glob("%s/%s-%s.db" % (context.imagedbPrefix, site, '*' if instrument is None else instrument))
     alldata = None
@@ -395,6 +507,10 @@ def parseCommandLine():
                         help='Telescope id. written inform enclosure-telescope, e.g., "domb-1m0a"')
     parser.add_argument('--filter', default='rp', help='Which filter to process.', choices=['gp', 'rp', 'ip', 'zp'])
 
+    parser.add_argument('--testdb',  action='store_true')
+    parser.add_argument('--importold',  action='store_true')
+
+
     args = parser.parse_args()
 
     logging.basicConfig(level=getattr(logging, args.log_level.upper()),
@@ -411,21 +527,41 @@ if __name__ == '__main__':
 
     args = parseCommandLine()
 
+
+    if (args.testdb):
+        db = photdbinterface("/home/dharbeck/lcozpplots/sqlite.db")
+        db.readRecords()
+        db.close()
+        exit()
+
+
+    if (args.importold):
+        print ("testing db interface")
+        db = photdbinterface("/home/dharbeck/lcozpplots/sqlite.db")
+        dbfiles = glob.glob ("/home/dharbeck/lcozpplots/???-*.db")
+        for dbfile in dbfiles:
+
+            print ("Importing  " + dbfile)
+            db.readoldfile(dbfile)
+
+        db.close()
+        exit(0)
+
     if args.site is not None:
         crawlsites = [args.site, ]
     else:
         crawlsites = telescopedict
 
-    for site in crawlsites:
+    if True:
+       for site in crawlsites:
+            if args.telescope is None:
+                crawlScopes = telescopedict[site]
+            else:
+                crawlScopes = [args.telescope, ]
 
-        if args.telescope is None:
-            crawlScopes = telescopedict[site]
-        else:
-            crawlScopes = [args.telescope, ]
-
-        for telescope in crawlScopes:
-            print(site, telescope)
-            plotlongtermtrend(site, telescope, args.filter, args, )
+            for telescope in crawlScopes:
+                print(site, telescope)
+                plotlongtermtrend(site, telescope, args.filter, args, )
 
     plotallmirrormodels(args)
     plotallmirrormodels(args, type='0m4', range=[20,23])
