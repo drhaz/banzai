@@ -541,6 +541,45 @@ def parseCommandLine():
     return args
 
 
+import webbrowser
+def renderHTMLPage (args):
+
+    outputfile = "%s/lcozp.html" % (args.imagedbPrefix)
+
+    message = """<html>
+<head></head>
+<body><title>LCO Zeropoint Plots</title>
+
+<h1> Overview </h1>
+     <a href="allmodels_[2m0a|1m0a]_rp.png"> <img src="allmodels_[2m0a|1m0a]_rp.png"/ width="800"> </a>
+     <a href="allmodels_0m4_rp.png"><img src="allmodels_0m4_rp.png" width="800"/></a>
+    <p/>
+    
+<h1> Details by Site: </h1>
+"""
+
+    for site in telescopedict:
+        message = message + " <h2> %s </h2>\n" % (site)
+
+        zptrendimages = glob.glob ("%s/photzptrend-%s-????-????-rp.png" % (args.imagedbPrefix, site))
+
+        zptrendimages.sort(key = lambda x: x[-16: -4])
+
+        print (zptrendimages)
+        for zptrend in zptrendimages:
+            line = '<a href="%s"><img src="%s" width="600"/></a>  <img src="%s" width="600"/><p/>' % (zptrend, zptrend, zptrend.replace('photzptrend', 'airmasstrend'))
+            message = message + line
+
+
+    message = message + "</body></html>"
+
+    with open (outputfile, 'w+') as f:
+        f.write (message)
+        f.close()
+        #webbrowser.open('file://%s' % outputfile, new=False)
+
+
+
 if __name__ == '__main__':
     plt.style.use('ggplot')
     matplotlib.rcParams['savefig.dpi'] = 600
@@ -572,6 +611,11 @@ if __name__ == '__main__':
     else:
         crawlsites = telescopedict
 
+
+
+
+
+
     if True:
        for site in crawlsites:
             if args.telescope is None:
@@ -583,7 +627,14 @@ if __name__ == '__main__':
                 print(site, telescope)
                 plotlongtermtrend(site, telescope, args.filter, args, )
 
+
+
     plotallmirrormodels(args)
     plotallmirrormodels(args, type='0m4', range=[20,23])
+
+
+    # Make a fancy HTML page
+
+    renderHTMLPage(args)
 
     sys.exit(0)
