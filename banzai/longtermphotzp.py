@@ -25,7 +25,11 @@ _logger = logging.getLogger(__name__)
 airmasscorrection = {'gp': 0.17, 'rp': 0.09, 'ip': 0.06, 'zp': 0.05, }
 
 starttime = datetime.datetime(2016, 1, 1)
-endtime   = datetime.datetime(2018, 4, 28)
+
+endtime   = datetime.datetime.utcnow().replace(day=28) + datetime.timedelta(days=31+4)
+endtime.replace(day =1)
+
+
 
 colorterms = {}
 telescopedict = {
@@ -551,7 +555,7 @@ def parseCommandLine():
 import webbrowser
 def renderHTMLPage (args):
 
-    outputfile = "%s/lcozp.html" % (args.imagedbPrefix)
+    outputfile = "%s/index.html" % (args.imagedbPrefix)
 
     message = """<html>
 <head></head>
@@ -574,11 +578,12 @@ def renderHTMLPage (args):
 
         print (zptrendimages)
         for zptrend in zptrendimages:
+            zptrend = zptrend.replace("%s/" % args.imagedbPrefix, "")
             line = '<a href="%s"><img src="%s" width="600"/></a>  <img src="%s" width="600"/>  <img src="%s" width="600"/><p/>' % (zptrend, zptrend, zptrend.replace('photzptrend', 'colortermtrend'), zptrend.replace('photzptrend', 'airmasstrend'))
             message = message + line
 
 
-    message = message + "</body></html>"
+    message = message + "<p/>Figures updated %s UTC <p/></body></html>" % (datetime.datetime.utcnow())
 
     with open (outputfile, 'w+') as f:
         f.write (message)
@@ -641,7 +646,7 @@ if __name__ == '__main__':
 
 
     # Make a fancy HTML page
-
     renderHTMLPage(args)
 
     sys.exit(0)
+

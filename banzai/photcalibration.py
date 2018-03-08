@@ -543,8 +543,9 @@ def crawlSite(site, type, args):
         cameras.append((site, os.path.basename(os.path.normpath(candidate))))
 
     for setup in cameras:
-        print(setup[0], setup[1])
-        crawlSiteCameraArchive(setup[0], setup[1], args, args.date)
+        for date in args.date:
+            print(setup[0], setup[1], date)
+            crawlSiteCameraArchive(setup[0], setup[1], args, date)
 
 
 def parseCommandLine():
@@ -566,7 +567,7 @@ def parseCommandLine():
     parser.add_argument('--imagerootdir', dest='rootdir', default='/archive/engineering',
                         help="LCO archive root directory")
     parser.add_argument('--site', dest='site', default=None, help='sites code for camera')
-    parser.add_argument('--date', dest='date', default=None, help='Specific date to process.')
+    parser.add_argument('--date', dest='date', default=[None,], nargs='+',  help='Specific date to process.')
     parser.add_argument('--mintexp', dest='mintexp', default=60, type=float,  help='Minimum exposure time to accept')
 
     cameragroup = parser.add_mutually_exclusive_group()
@@ -621,7 +622,8 @@ def photzpmain():
             sites = args.site
 
         print("Calibrating camera ", args.camera, " at site ", sites, ' for date ', args.date)
-        crawlSiteCameraArchive(sites, args.camera, args, date=args.date)
+        for date in args.date:
+            crawlSiteCameraArchive(sites, args.camera, args, date=date)
 
 
     elif args.crawldirectory is not None:
