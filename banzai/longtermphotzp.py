@@ -194,8 +194,9 @@ def getCombineddataByTelescope(site, telescope, context, instrument=None):
     print (site,telescope,instrument)
     dome, tel = telescope.split ("-")
 
-
-    return db.readRecords(site,dome,tel,instrument)
+    results =  db.readRecords(site,dome,tel,instrument)
+    db.close()
+    return results
 
 
     inputfiles = glob.glob("%s/%s-%s.db" % (context.imagedbPrefix, site, '*' if instrument is None else instrument))
@@ -323,10 +324,12 @@ def plotlongtermtrend(select_site, select_telescope, select_filter, context, ins
     plt.plot(airmasselect, zp_air, ".", c="blue")
     plt.xlabel("Airmass")
     plt.ylabel("Photomertic Zeropoint %s" % select_filter)
+    plt.title ("Global airmass trend and correction check")
+
     meanzp = np.nanmedian(zpselect)
     plt.ylim([meanzp - 0.5, meanzp + 0.5])
-    plt.savefig(
-        "%s/airmasstrend-%s-%s-%s.png" % (context.imagedbPrefix, select_site, select_telescope, select_filter))
+
+    plt.savefig("%s/airmasstrend-%s-%s-%s.png" % (context.imagedbPrefix, select_site, select_telescope, select_filter))
     plt.close()
 
     # Color terms
@@ -353,7 +356,11 @@ def plotlongtermtrend(select_site, select_telescope, select_filter, context, ins
 
     plt.xlim([starttime, endtime])
     plt.ylim([-0.2, 0.2])
+    plt.gcf().autofmt_xdate()
 
+    plt.title("Color term (g-r)  %s:%s in %s" % (select_site, select_telescope, select_filter))
+    plt.xlabel("DATE-OBS")
+    plt.ylabel("Color term coefficient (g-r)")
     plt.savefig(
         "%s/colortermtrend-%s-%s-%s.png" % (context.imagedbPrefix, select_site, select_telescope, select_filter))
     plt.close()
@@ -567,7 +574,7 @@ def renderHTMLPage (args):
 
         print (zptrendimages)
         for zptrend in zptrendimages:
-            line = '<a href="%s"><img src="%s" width="600"/></a>  <img src="%s" width="600"/><p/>' % (zptrend, zptrend, zptrend.replace('photzptrend', 'airmasstrend'))
+            line = '<a href="%s"><img src="%s" width="600"/></a>  <img src="%s" width="600"/>  <img src="%s" width="600"/><p/>' % (zptrend, zptrend, zptrend.replace('photzptrend', 'colortermtrend'), zptrend.replace('photzptrend', 'airmasstrend'))
             message = message + line
 
 
