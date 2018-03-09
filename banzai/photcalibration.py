@@ -5,6 +5,8 @@ from longtermphotzp import photdbinterface
 
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+plt.style.use('ggplot')
+
 import numpy as np
 import argparse
 import re
@@ -233,7 +235,7 @@ class PhotCalib():
             plt.figure()
             plt.plot(refmag, magZP, '.')
             plt.xlim([10, 22])
-            plt.ylim([20, 31])
+            plt.ylim([photzp-0.5, photzp+0.5])
             plt.axhline(y=photzp, color='r', linestyle='-')
             plt.xlabel("Reference catalog mag")
             plt.ylabel("Reference Mag - Instrumnetal Mag (%s)" % (retCatalog['instfilter']))
@@ -249,14 +251,14 @@ class PhotCalib():
                 plt.plot(xp, color_p(xp), '-', label="color term fit % 6.4f" % (colorterm))
                 plt.legend()
 
-            plt.xlabel("(g-r)_{SDSS} Reference")
+
+            plt.xlim ([-0.5, 3.0])
+            plt.ylim ([-1,1])
+            plt.xlabel("(g-r)$_{\\rm{SDSS}}$ Reference")
             plt.ylabel("Reference Mag - Instrumnetal Mag - ZP (%5.2f) %s" % (photzp, retCatalog['instfilter']))
             plt.title("Color correction %s " % (outbasename))
             plt.savefig("%s/%s_%s_color.png" % (outputimageRootDir, outbasename, retCatalog['instfilter']))
             plt.close()
-
-
-
 
 
         # TODO: Make this thread safe, e.g., write to transactional database, or return values for storing externally.
