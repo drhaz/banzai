@@ -492,6 +492,10 @@ def plotallmirrormodels(context, type='[2m0a|1m0a]', range=[22.5,25.5]):
 
     myfilter = context.filter
     modellist = glob.glob("%s/mirrormodel*%s[abc]-%s.dat" % (context.imagedbPrefix, type, myfilter))
+    print (modellist[0][16:-12])
+
+    modellist.sort(key = lambda x: x[-20:-17] + x[-11:-7].replace("2","0")+x[-16:-12])
+    print (modellist)
 
     for model in modellist:
         print(model)
