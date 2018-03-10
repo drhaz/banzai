@@ -39,7 +39,8 @@ telescopedict = {
     'elp': ['doma-1m0a', 'aqwa-0m4a'],
     'cpt': ['doma-1m0a', 'domb-1m0a', 'domc-1m0a'],
     'tfn': ['aqwa-0m4a', 'aqwa-0m4b'],
-    'sqa': ['doma-0m8a']
+    'sqa': ['doma-0m8a'],
+    'bpl': ['doma-1m0a']
 }
 
 

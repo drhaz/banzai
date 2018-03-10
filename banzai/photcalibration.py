@@ -609,7 +609,7 @@ def photzpmain():
         if args.site is not None:
             sites = [site for site in args.site.split(',')]
         else:
-            sites = ('lsc', 'cpt', 'ogg', 'coj', 'tfn', 'elp', 'sqa')
+            sites = ('lsc', 'cpt', 'ogg', 'coj', 'tfn', 'elp', 'sqa', 'bpl')
 
         print("Crawling through camera types ", cameras, " at sites ", sites, " for date ", args.date)
         for site in sites:
