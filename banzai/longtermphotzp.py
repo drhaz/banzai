@@ -66,6 +66,7 @@ class photdbinterface:
         self.sqlite_file = fname
         self.conn = sqlite3.connect(self.sqlite_file)
         self.conn.execute(self.createstatement)
+        self.conn.execute("PRAGMA journal_mode=WAL;")
         self.conn.commit()
 
     def addphotzp (self, datablob, commit = True) :
@@ -132,8 +133,12 @@ class photdbinterface:
         t = Table (allrows, names = ['name','dateobs','site','dome','telescope','camera','filter','airmass','zp','colorterm','zpsig'])
         t['dateobs'] = t['dateobs'].astype (str)
         t['dateobs'] = astt.Time(t['dateobs'], scale='utc', format=None).to_datetime()
+
         t['zp'] = t['zp'].astype(float)
+
+        t['airmass'] [ 'UNKNOWN' == t['airmass'] ]  = 'nan'
         t['airmass'] = t['airmass'].astype(float)
+
         t['zpsig'] = t['zpsig'].astype(float)
         t['colorterm'] = t['colorterm'].astype(float)
 
@@ -251,6 +256,7 @@ def plotlongtermtrend(select_site, select_telescope, select_filter, context, ins
 
     # weed out bad data
     selection = selection & np.logical_not(np.isnan(data['zp']))
+
     selection = selection & np.logical_not(np.isnan(data['airmass']))
 
     if len(selection) == 0:
