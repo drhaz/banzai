@@ -37,7 +37,7 @@ telescopedict = {
     'coj': ['clma-2m0a', 'doma-1m0a', 'domb-1m0a', 'clma-0m4a', 'clma-0m4b'],
     'ogg': ['clma-2m0a', 'clma-0m4b', 'clma-0m4c'],
     'elp': ['doma-1m0a', 'aqwa-0m4a'],
-    'cpt': ['doma-1m0a', 'domb-1m0a', 'domc-1m0a'],
+    'cpt': ['doma-1m0a', 'domb-1m0a', 'domc-1m0a', 'aqwa-0m4a'],
     'tfn': ['aqwa-0m4a', 'aqwa-0m4b'],
     'sqa': ['doma-0m8a'],
     'bpl': ['doma-1m0a']
@@ -48,13 +48,15 @@ telescopecleaning = {
     'lsc-doma-1m0a' : [datetime.datetime(2018, 4, 5),] ,
     'lsc-domb-1m0a' : [datetime.datetime(2018, 4, 5),] ,
     'lsc-domc-1m0a' : [datetime.datetime(2017, 8, 31), datetime.datetime(2018, 4, 5),] ,
-    'lsc-aqwa-0m4a' : [datetime.datetime(2018, 4, 5),] ,
-    'lsc-aqwb-0m4a' : [datetime.datetime(2018, 4, 5),] ,
+    #'lsc-aqwa-0m4a' : [datetime.datetime(2018, 4, 5),] ,
+    #'lsc-aqwb-0m4a' : [datetime.datetime(2018, 4, 5),] ,
     'coj-clma-0m4a' : [datetime.datetime(2017, 6, 30),] ,
     'coj-clma-0m4b' : [datetime.datetime(2017, 6, 30),] ,
     'elp-doma-1m0a' : [datetime.datetime(2018, 4, 5),] ,
-    'ogg-clma-2m0a' : [datetime.datetime(2017, 10,20),]
-
+    'ogg-clma-2m0a' : [datetime.datetime(2017, 10,20),],
+    'cpt-doma-1m0a' : [datetime.datetime(2017, 11, 15),] ,
+    'cpt-domb-1m0a' : [datetime.datetime(2017, 11, 15),] ,
+    'cpt-domc-1m0a' : [datetime.datetime(2017, 11, 15),] ,
 }
 
 
@@ -204,7 +206,7 @@ def readDataFile(inputfile, gaincorrect = True):
     return None
 
 
-def getCombineddataByTelescope(site, telescope, context, instrument=None):
+def getCombineddataByTelescope(site, telescope, context, instrument=None, cacheddb=None):
     """
     Concatenate all zeropoint data for a site, and select by telescope and instrument.
     :param site:
@@ -214,12 +216,17 @@ def getCombineddataByTelescope(site, telescope, context, instrument=None):
     :return: concatenated data for a site / tel / isntrument selection.
     """
 
-    db = photdbinterface(context.database)
+    if cacheddb is None:
+        db = photdbinterface(context.database)
+    else:
+        db=cacheddb
+
     print (site,telescope,instrument)
     dome, tel = telescope.split ("-")
 
     results =  db.readRecords(site,dome,tel,instrument)
-    db.close()
+    if cacheddb is None:
+        db.close()
     return results
 
 
@@ -255,8 +262,9 @@ def getCombineddataByTelescope(site, telescope, context, instrument=None):
     return alldata
 
 
-def plotlongtermtrend(select_site, select_telescope, select_filter, context, instrument=None):
-    data = getCombineddataByTelescope(select_site, select_telescope, context, instrument)
+def plotlongtermtrend(select_site, select_telescope, select_filter, context, instrument=None, cacheddb = None):
+
+    data = getCombineddataByTelescope(select_site, select_telescope, context, instrument, cacheddb=cacheddb)
 
     if data is None:
         return
@@ -655,7 +663,7 @@ if __name__ == '__main__':
 
 
 
-
+    db = photdbinterface(args.database)
 
 
     if True:
@@ -667,9 +675,11 @@ if __name__ == '__main__':
 
             for telescope in crawlScopes:
                 print(site, telescope)
-                plotlongtermtrend(site, telescope, args.filter, args, )
+
+                plotlongtermtrend(site, telescope, args.filter, args, cacheddb=db )
 
 
+    db.close()
 
     plotallmirrormodels(args)
     plotallmirrormodels(args, type='0m4', range=[20,23])
