@@ -48,6 +48,8 @@ telescopecleaning = {
     'lsc-doma-1m0a' : [datetime.datetime(2018, 4, 5),] ,
     'lsc-domb-1m0a' : [datetime.datetime(2018, 4, 5),] ,
     'lsc-domc-1m0a' : [datetime.datetime(2017, 8, 31), datetime.datetime(2018, 4, 5),] ,
+    'lsc-aqwa-0m4a' : [datetime.datetime(2018, 4, 5),] ,
+    'lsc-aqwb-0m4a' : [datetime.datetime(2018, 4, 5),] ,
     'coj-clma-0m4a' : [datetime.datetime(2017, 6, 30),] ,
     'coj-clma-0m4b' : [datetime.datetime(2017, 6, 30),] ,
     'elp-doma-1m0a' : [datetime.datetime(2018, 4, 5),] ,
