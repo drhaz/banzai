@@ -44,6 +44,18 @@ telescopedict = {
 }
 
 
+telescopecleaning = {
+    'lsc-doma-1m0a' : [datetime.datetime(2018, 4, 5),] ,
+    'lsc-domb-1m0a' : [datetime.datetime(2018, 4, 5),] ,
+    'lsc-domc-1m0a' : [datetime.datetime(2017, 8, 31), datetime.datetime(2018, 4, 5),] ,
+    'coj-clma-0m4a' : [datetime.datetime(2017, 6, 30),] ,
+    'coj-clma-0m4b' : [datetime.datetime(2017, 6, 30),] ,
+    'elp-doma-1m0a' : [datetime.datetime(2018, 4, 5),] ,
+    'ogg-clma-2m0a' : [datetime.datetime(2017, 10,20),]
+
+}
+
+
 class photdbinterface:
 
     createstatement = "CREATE TABLE IF NOT EXISTS lcophot (" \
@@ -305,6 +317,15 @@ def plotlongtermtrend(select_site, select_telescope, select_filter, context, ins
     else:
         print("Mirror model failed to compute. not plotting !")
 
+
+    for telid in telescopecleaning:
+        _site,_enc,_tel = telid.split ("-")
+
+        if (_site == select_site) and (select_telescope == '%s-%s' % (_enc,_tel)):
+            for event in telescopecleaning[telid]:
+                plt.axvline (x=event, color='k', linestyle='--')
+
+
     plt.legend()
     plt.xlim([starttime, endtime])
     plt.ylim([ymax - 3.5, ymax])
@@ -313,10 +334,6 @@ def plotlongtermtrend(select_site, select_telescope, select_filter, context, ins
     plt.ylabel("Photometric Zeropoint %s" % select_filter)
     plt.title("Long term throughput  %s:%s in %s" % (select_site, select_telescope, select_filter))
 
-    if instrument in ("kb97", "kb98"):
-        plt.axvline(x=datetime.datetime(2017, 6, 30), color='k', linestyle='--')
-    if instrument in ("fl03", "xxx"):
-        plt.axvline(x=datetime.datetime(2017, 8, 31), color='k', linestyle='--')
 
     outfigname = "%s/photzptrend-%s-%s-%s.png" % (
         context.imagedbPrefix, select_site, select_telescope, select_filter)
