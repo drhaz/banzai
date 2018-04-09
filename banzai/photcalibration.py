@@ -19,6 +19,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord
 from astropy import units as u
+import datetime
 
 _logger = logging.getLogger(__name__)
 
@@ -569,8 +570,12 @@ def parseCommandLine():
     parser.add_argument('--imagerootdir', dest='rootdir', default='/archive/engineering',
                         help="LCO archive root directory")
     parser.add_argument('--site', dest='site', default=None, help='sites code for camera')
-    parser.add_argument('--date', dest='date', default=[None,], nargs='+',  help='Specific date to process.')
     parser.add_argument('--mintexp', dest='mintexp', default=60, type=float,  help='Minimum exposure time to accept')
+
+    mutex = parser.add_mutually_exclusive_group()
+    mutex.add_argument('--date', dest='date', default=[None,], nargs='+',  help='Specific date to process.')
+    mutex.add_argument('--lastNdays',  type=int)
+
 
     cameragroup = parser.add_mutually_exclusive_group()
 
@@ -593,6 +598,18 @@ def parseCommandLine():
 
     if args.crawldirectory is not None:
         args.crawldirectory = os.path.expanduser(args.crawldirectory)
+
+
+    args.date=[]
+    if (args.lastNdays is not None):
+        today = datetime.datetime.utcnow()
+        for ii in range (args.lastNdays):
+            day = today - datetime.timedelta(days=ii)
+            args.date.append (day.strftime("%Y%m%d"))
+
+
+        args.date = args.date[::-1]
+
 
     args.ps1dir = os.path.expanduser(args.ps1dir)
 
