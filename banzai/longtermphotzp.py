@@ -311,7 +311,19 @@ def plotlongtermtrend(select_site, select_telescope, select_filter, context, ins
 
     plt.figure()
 
+    for telid in telescopecleaning:
+        _site,_enc,_tel = telid.split ("-")
+
+        if (_site == select_site) and (select_telescope == '%s-%s' % (_enc,_tel)):
+            for event in telescopecleaning[telid]:
+                plt.axvline (x=event, color='grey', linestyle='--')
+
+
+
     uniquecameras = np.unique(cameraselect)
+
+
+
     for uc in uniquecameras:
         # plot zeropoint with differnt markers per camera
 
@@ -328,12 +340,6 @@ def plotlongtermtrend(select_site, select_telescope, select_filter, context, ins
         print("Mirror model failed to compute. not plotting !")
 
 
-    for telid in telescopecleaning:
-        _site,_enc,_tel = telid.split ("-")
-
-        if (_site == select_site) and (select_telescope == '%s-%s' % (_enc,_tel)):
-            for event in telescopecleaning[telid]:
-                plt.axvline (x=event, color='k', linestyle='--')
 
 
     plt.legend()
