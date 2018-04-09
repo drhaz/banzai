@@ -16,6 +16,7 @@ import os
 import sqlite3
 from astropy.io import ascii
 from astropy.table import Table
+from itertools import cycle
 
 assert sys.version_info >= (3,5)
 _logger = logging.getLogger(__name__)
@@ -169,6 +170,10 @@ class photdbinterface:
             #
             dateselect =  (t['camera'] == 'fl11')
             t['zp'][dateselect] = t['zp'][dateselect] - 2.5 * math.log10 (1.85 / 2.16)
+
+        if 'kb96' in t['camera']:
+            dateselect = ( t['dateobs'] > datetime.datetime(year=2017,month=11,day=15) ) & ( t['dateobs'] < datetime.datetime(year=2018,month=4,day=10) ) & (t['camera'] == 'kb96')
+            t['zp'][dateselect] = t['zp'][dateselect] - 2.5 * math.log10 (0.851 / 2.74)
 
         return t
 
@@ -537,6 +542,9 @@ def plotallmirrormodels(context, type='[2m0a|1m0a]', range=[22.5,25.5]):
     modellist.sort(key = lambda x: x[-20:-17] + x[-11:-7].replace("2","0")+x[-16:-12])
     print (modellist)
 
+    plt.rc('lines', linewidth=1)
+    prop_cycle=  cycle( ['-', '-.'])
+
     for model in modellist:
         print(model)
         try:
@@ -549,7 +557,7 @@ def plotallmirrormodels(context, type='[2m0a|1m0a]', range=[22.5,25.5]):
             continue
 
         plt.gcf().autofmt_xdate()
-        plt.plot(date, data['zp'], label=model[-20:-7].replace('-', ':'))
+        plt.plot(date, data['zp'],next(prop_cycle),  label=model[-20:-7].replace('-', ':'), )
 
     plt.legend(bbox_to_anchor=(1.01, 1), loc='upper left', ncol=1)
     plt.xlabel('DATE-OBS')
