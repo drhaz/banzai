@@ -350,7 +350,7 @@ class PS1IPP:
         _logger.debug("Using catalog found in %s" % (self.basedir))
         skytable_filename = "%s/SkyTable.fits" % (self.basedir)
         if (not os.path.isfile(skytable_filename)):
-            _logger.error("Unable to find catalog index file in %s!" % (self.basedir))
+            _logger.fatal("Unable to find catalog index file in %s!" % (self.basedir))
             return None
 
         # Read in the master index hdu
@@ -600,16 +600,15 @@ def parseCommandLine():
         args.crawldirectory = os.path.expanduser(args.crawldirectory)
 
 
-    args.date=[]
+
     if (args.lastNdays is not None):
+        args.date=[]
         today = datetime.datetime.utcnow()
         for ii in range (args.lastNdays):
             day = today - datetime.timedelta(days=ii)
             args.date.append (day.strftime("%Y%m%d"))
 
-
         args.date = args.date[::-1]
-
 
     args.ps1dir = os.path.expanduser(args.ps1dir)
 
