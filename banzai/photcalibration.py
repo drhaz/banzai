@@ -484,7 +484,7 @@ class PS1IPP:
 def crawlDirectory(directory, db, args):
 
 
-    search = "%s/*-[es]91.fits.fz" % (directory)
+    search = "%s/*-[es][19]1.fits.fz" % (directory)
     inputlist = glob.glob(search)
     initialsize = len (inputlist)
 

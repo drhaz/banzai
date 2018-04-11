@@ -336,7 +336,7 @@ def plotlongtermtrend(select_site, select_telescope, select_filter, context, ins
                  zp_air[(zpsigselect <= photzpmaxnoise) & (cameraselect == uc)],
                  'o', markersize=2, label=uc)
         plt.plot(dateselect[zpsigselect > photzpmaxnoise], zp_air[zpsigselect > photzpmaxnoise], '.',
-                 markersize=1, c="grey", )
+                 markersize=1, c="grey", label='rejected' )
 
     if _x is not None:
         plt.plot(_x, _y, "-", c='red', label='upper envelope')
