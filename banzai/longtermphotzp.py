@@ -49,8 +49,8 @@ telescopecleaning = {
     'lsc-doma-1m0a' : [datetime.datetime(2018, 4, 5),] ,
     'lsc-domb-1m0a' : [datetime.datetime(2018, 4, 5),] ,
     'lsc-domc-1m0a' : [datetime.datetime(2017, 8, 31), datetime.datetime(2018, 4, 5),] ,
-    #'lsc-aqwa-0m4a' : [datetime.datetime(2018, 4, 5),] ,
-    #'lsc-aqwb-0m4a' : [datetime.datetime(2018, 4, 5),] ,
+    'lsc-aqwa-0m4a' : [datetime.datetime(2018, 4, 17),] ,
+    'lsc-aqwb-0m4a' : [datetime.datetime(2018, 4, 17),] ,
     'coj-clma-0m4a' : [datetime.datetime(2017, 6, 30),] ,
     'coj-clma-0m4b' : [datetime.datetime(2017, 6, 30),] ,
     'elp-doma-1m0a' : [datetime.datetime(2018, 4, 5),] ,
@@ -582,7 +582,7 @@ def parseCommandLine():
 
     parser.add_argument('--outputdirectory', dest='imagedbPrefix', default='~/lcozpplots',
                         help='Directory containing photometryc databases')
-    parser.add_argument('--database', default = '~/lcozpplots/sqlite.db')
+    parser.add_argument('--database', default = '~/lcozpplots/lcophotzp.db')
     parser.add_argument('--site', dest='site', default=None, help='sites code for camera')
     parser.add_argument('--telescope', default=None,
                         help='Telescope id. written inform enclosure-telescope, e.g., "domb-1m0a"')
