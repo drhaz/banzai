@@ -526,11 +526,11 @@ def crawlSiteCameraArchive(site, camera, args, date=None):
 
     imagedb = photdbinterface(args.imagedbPrefix)
 
-    searchdir = "%s/%s/%s/%s/processed" % (args.rootdir, site, camera, date)
+    searchdir = "%s/%s/%s/%s/%s" % (args.rootdir, site, camera, date, args.processstatus)
 
 
     # search = "%s/%s/%s/%s/preview/*-[es]11.fits.fz" % (args.rootdir, site, camera, date)
-    _logger.info("File search string is: %s" % (searchdir))
+    _logger.info("Searching in directories: %s" % (searchdir))
 
     crawlDirectory(searchdir, imagedb, args)
     imagedb.close();
@@ -565,12 +565,15 @@ def parseCommandLine():
                         help='Directory of PS1 catalog')
     parser.add_argument("--diagnosticplotsdir", dest='outputimageRootDir', default=None,
                         help='Output directory for diagnostic photometry plots. No plots generated if option is omitted. This is a time consuming task. ')
-    parser.add_argument('--photodb', dest='imagedbPrefix', default='~/lcozpplots/sqlite.db',
+    parser.add_argument('--photodb', dest='imagedbPrefix', default='~/lcozpplots/lcophotzp.db',
                         help='Result output directory. .db file is written here')
     parser.add_argument('--imagerootdir', dest='rootdir', default='/archive/engineering',
                         help="LCO archive root directory")
     parser.add_argument('--site', dest='site', default=None, help='sites code for camera')
     parser.add_argument('--mintexp', dest='mintexp', default=60, type=float,  help='Minimum exposure time to accept')
+
+    parser.add_argument ('--preview', dest='processstatus', default='processed', action='store_const', const='preview')
+
 
     mutex = parser.add_mutually_exclusive_group()
     mutex.add_argument('--date', dest='date', default=[None,], nargs='+',  help='Specific date to process.')
@@ -612,6 +615,7 @@ def parseCommandLine():
 
     args.ps1dir = os.path.expanduser(args.ps1dir)
 
+    print (args.processstatus)
     return args
 
 
@@ -642,7 +646,6 @@ def photzpmain():
         print("Calibrating camera ", args.camera, " at site ", sites, ' for date ', args.date)
         for date in args.date:
             crawlSiteCameraArchive(sites, args.camera, args, date=date)
-
 
     elif args.crawldirectory is not None:
         imagedb = photdbinterface("%s/%s" % (args.crawldirectory, 'imagezp.db'))
