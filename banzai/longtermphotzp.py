@@ -166,6 +166,12 @@ class photdbinterface:
             dateselect = ( t['dateobs'] < datetime.datetime(year=2017,month=11,day=17) ) & (t['camera'] == 'fl06')
             t['zp'][dateselect] = t['zp'][dateselect] - 2.5 * math.log10 (1.82 / 2.45)
 
+        if 'fl05' in t['camera']:
+        # fl06 was misconfigured with a wrong gain, which trickles down through the banzai processing.
+        # The correct gain was validated Nov 27th 2017 on existing data.
+            dateselect =  (t['camera'] == 'fl05')
+            t['zp'][dateselect] = t['zp'][dateselect] - 2.5 * math.log10 (1.69 / 2.09)
+
         if 'fl11' in  t['camera']:
             #
             dateselect =  (t['camera'] == 'fl11')
