@@ -26,6 +26,7 @@ _logger = logging.getLogger(__name__)
 airmasscorrection = {'gp': 0.17, 'rp': 0.09, 'ip': 0.06, 'zp': 0.05, }
 
 starttime = datetime.datetime(2016, 1, 1)
+#starttime = datetime.datetime(2018,3,1)
 
 endtime   = datetime.datetime.utcnow().replace(day=28) + datetime.timedelta(days=31+4)
 endtime.replace(day =1)
@@ -53,7 +54,7 @@ telescopecleaning = {
     'lsc-aqwb-0m4a' : [datetime.datetime(2018, 4, 17),] ,
     'coj-clma-0m4a' : [datetime.datetime(2017, 6, 30),] ,
     'coj-clma-0m4b' : [datetime.datetime(2017, 6, 30),] ,
-    'elp-doma-1m0a' : [datetime.datetime(2018, 4, 5),] ,
+    'elp-doma-1m0a' : [datetime.datetime(2017, 9, 20), datetime.datetime(2018, 4, 5),datetime.datetime(2018, 5, 6), ] ,
     'ogg-clma-2m0a' : [datetime.datetime(2017, 10,20),],
     'cpt-doma-1m0a' : [datetime.datetime(2017, 11, 15),] ,
     'cpt-domb-1m0a' : [datetime.datetime(2017, 11, 15),] ,
@@ -440,7 +441,7 @@ def findUpperEnvelope(dateobs, datum, ymax=24.2):
     :return:
     """
 
-    stderror = 0.02
+    stderror = 0.03
 
     alldata = zip(dateobs, datum)
     sorted_points = sorted(alldata)
@@ -462,7 +463,7 @@ def findUpperEnvelope(dateobs, datum, ymax=24.2):
 
         if len(todayzps) > 3:  # require a minimum amount of data for a night
 
-            todayzps = np.sort(todayzps)[3:]
+            todayzps = np.sort(todayzps)[1:]
             maxzp = np.nanmax(todayzps)
             upperEnv = np.nanmean(todayzps[todayzps > (maxzp - stderror)])
 
@@ -473,7 +474,7 @@ def findUpperEnvelope(dateobs, datum, ymax=24.2):
         startdate = startdate + datetime.timedelta(days=1)
 
     # filter the daily zero point variation. Work in progress.
-    medianrange = 7
+    medianrange = 9
     newday_y = scipy.signal.medfilt(day_y, medianrange)
 
     return np.asarray(day_x), newday_y

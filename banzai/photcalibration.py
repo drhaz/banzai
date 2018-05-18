@@ -490,12 +490,13 @@ def crawlDirectory(directory, db, args):
 
 
     rejects = []
-    for image in inputlist:
-       if db.exists(image):
-           rejects.append (image)
+    if not args.redo:
+        for image in inputlist:
+            if db.exists(image):
+                rejects.append (image)
 
-    for r in rejects:
-        inputlist.remove (r)
+        for r in rejects:
+            inputlist.remove (r)
 
 
     print ("Found %d files intially, but cleaned %d already measured images. Starting analysis of %d files" % (initialsize, len(rejects), len(inputlist)))
@@ -571,8 +572,9 @@ def parseCommandLine():
                         help="LCO archive root directory")
     parser.add_argument('--site', dest='site', default=None, help='sites code for camera')
     parser.add_argument('--mintexp', dest='mintexp', default=60, type=float,  help='Minimum exposure time to accept')
-
+    parser.add_argument('--redo', action='store_true')
     parser.add_argument ('--preview', dest='processstatus', default='processed', action='store_const', const='preview')
+
 
 
     mutex = parser.add_mutually_exclusive_group()
