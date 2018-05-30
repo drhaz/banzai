@@ -47,9 +47,9 @@ telescopedict = {
 
 
 telescopecleaning = {
-    'lsc-doma-1m0a' : [datetime.datetime(2018, 4, 5),] ,
-    'lsc-domb-1m0a' : [datetime.datetime(2018, 4, 5),] ,
-    'lsc-domc-1m0a' : [datetime.datetime(2017, 8, 31), datetime.datetime(2018, 4, 5),] ,
+    'lsc-doma-1m0a' : [datetime.datetime(2018, 4, 5), datetime.datetime(2018, 5, 30),] ,
+    'lsc-domb-1m0a' : [datetime.datetime(2018, 4, 5), datetime.datetime(2018, 5, 30),] ,
+    'lsc-domc-1m0a' : [datetime.datetime(2017, 8, 31), datetime.datetime(2018, 4, 5),datetime.datetime(2018, 5, 30),] ,
     'lsc-aqwa-0m4a' : [datetime.datetime(2018, 4, 17),] ,
     'lsc-aqwb-0m4a' : [datetime.datetime(2018, 4, 17),] ,
     'coj-clma-0m4a' : [datetime.datetime(2017, 6, 30),] ,
