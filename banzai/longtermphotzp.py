@@ -17,6 +17,7 @@ import sqlite3
 from astropy.io import ascii
 from astropy.table import Table
 from itertools import cycle
+import matplotlib.dates as mdates
 
 assert sys.version_info >= (3,5)
 _logger = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ _logger = logging.getLogger(__name__)
 airmasscorrection = {'gp': 0.17, 'rp': 0.09, 'ip': 0.06, 'zp': 0.05, }
 
 starttime = datetime.datetime(2016, 1, 1)
+
 #starttime = datetime.datetime(2018,3,1)
 
 endtime   = datetime.datetime.utcnow().replace(day=28) + datetime.timedelta(days=31+4)
@@ -182,6 +184,10 @@ class photdbinterface:
             dateselect = ( t['dateobs'] > datetime.datetime(year=2017,month=11,day=15) ) & ( t['dateobs'] < datetime.datetime(year=2018,month=4,day=10) ) & (t['camera'] == 'kb96')
             t['zp'][dateselect] = t['zp'][dateselect] - 2.5 * math.log10 (0.851 / 2.74)
 
+        #if 'kb74' in t['camera']:
+        #    dateselect =  (t['camera'] == 'kb74') & (t['site'] == 'elp')
+        #    t['zp'][dateselect] = t['zp'][dateselect] +0.6
+
         return t
 
 
@@ -274,9 +280,29 @@ def getCombineddataByTelescope(site, telescope, context, instrument=None, cached
     return alldata
 
 
+
+def dateformat (starttime,endtime):
+    plt.xlim([starttime, endtime])
+    plt.gcf().autofmt_xdate()
+    years = mdates.YearLocator()   # every year
+    months = mdates.MonthLocator(bymonth=[4, 7, 10])  # every month
+    yearsFmt = mdates.DateFormatter('%Y %b')
+    monthformat = mdates.DateFormatter('%b')
+    plt.gca().xaxis.set_major_locator(years)
+    plt.gca().xaxis.set_major_formatter(yearsFmt)
+    plt.gca().xaxis.set_minor_locator(months)
+    plt.gca().xaxis.set_minor_formatter(monthformat)
+    plt.setp(plt.gca().xaxis.get_minorticklabels(), rotation=45)
+    plt.setp(plt.gca().xaxis.get_majorticklabels(), rotation=45)
+    plt.gca().grid(which='minor')
+
 def plotlongtermtrend(select_site, select_telescope, select_filter, context, instrument=None, cacheddb = None):
 
     data = getCombineddataByTelescope(select_site, select_telescope, context, instrument, cacheddb=cacheddb)
+
+    mystarttime = starttime
+    if (select_site == 'elp') and (select_telescope=='doma-1m0a'):
+        mystarttime = datetime.datetime(2014, 1, 1)
 
     if data is None:
         return
@@ -355,9 +381,10 @@ def plotlongtermtrend(select_site, select_telescope, select_filter, context, ins
 
 
     plt.legend()
-    plt.xlim([starttime, endtime])
+
     plt.ylim([ymax - 3.5, ymax])
-    plt.gcf().autofmt_xdate()
+
+    dateformat(mystarttime,endtime)
     plt.xlabel("DATE-OBS")
     plt.ylabel("Photometric Zeropoint %s" % select_filter)
     plt.title("Long term throughput  %s:%s in %s" % (select_site, select_telescope, select_filter))
@@ -410,9 +437,8 @@ def plotlongtermtrend(select_site, select_telescope, select_filter, context, ins
         colorterms[select_filter] = {}
     colorterms[select_filter][instrument] = meancolorterm
 
-    plt.xlim([starttime, endtime])
+    dateformat (mystarttime,endtime)
     plt.ylim([-0.2, 0.2])
-    plt.gcf().autofmt_xdate()
 
     plt.title("Color term (g-r)  %s:%s in %s" % (select_site, select_telescope, select_filter))
     plt.xlabel("DATE-OBS")
@@ -569,7 +595,7 @@ def plotallmirrormodels(context, type='[2m0a|1m0a]', range=[22.5,25.5]):
     plt.legend(bbox_to_anchor=(1.01, 1), loc='upper left', ncol=1)
     plt.xlabel('DATE-OBS')
     plt.ylabel("phot zeropoint %s" % myfilter)
-    plt.xlim([starttime, endtime])
+    dateformat (starttime,endtime)
     plt.ylim(range)
     plt.title("Photometric zeropoint model in filter %s" % myfilter)
     plt.grid(True, which='both')
